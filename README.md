@@ -6,29 +6,29 @@ Additionnal steps are included to make sure this can be used starting from a fre
 
 NOTE: Some of this document is taken from the original BlueROV2 readme and does not currently apply
 
-## Requirements
+# Requirements
 
-# ROS2
+## ROS2
 The current recommended ROS2 version is Jazzy. All the related info can be found at https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html
 
-# Gazebo
+## Gazebo
     The recommended gazebo version is GZ Harmonic (LTS). More info and step-by-step installation guide are found here https://gazebosim.org/docs/latest/ros_installation/
     
     ROS 2 with Gazebo Fortress or newer with ros_gz_bridge
         Look out for your ROS 2 / Gazebo versions combination
     pose_to_tf, to get the ground truth from Gazebo if needed.
 
-# For the description
+## For the description
 
     Xacro , installable through apt install ros-${ROS_DISTRO}-xacro
     simple_launch, installable through apt install ros-${ROS_DISTRO}-simple-launch
 
-# For the control part
+## For the control part
 
     slider_publisher, installable through apt install ros-${ROS_DISTRO}-slider-publisher
     auv_control for basic control laws, from source
 
-# Installation
+## Installation
 
 Clone the package and its dependencies (if from source) in your ROS 2 workspace src and compile with colcon
 Running
