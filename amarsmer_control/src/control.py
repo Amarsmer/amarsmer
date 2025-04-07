@@ -28,8 +28,8 @@ class Controller(Node):
         t = self.get_time()
 
         # give thruster forces and joint angles
-        self.rov.move([10,10,10,10], [0.5*cos(i*t/10) for i in range(1,5)])
-
+        self.rov.move([10,10,10,10],
+                      [0.5*cos(i*t/10) for i in range(1,5)])
 
 
 rclpy.init()
