@@ -76,7 +76,7 @@
     </link>
   
 <xacro:include filename="hydrodynamics.xacro"/>
-<xacro:include filename="thrusters_plasmar2.xacro"/>
+<xacro:include filename="thrusters_plasmar1a.xacro"/>
 
   
 <!-- other Gazebo plugins -->
