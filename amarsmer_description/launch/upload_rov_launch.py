@@ -2,9 +2,9 @@ from simple_launch import SimpleLauncher, GazeboBridge
 
 sl = SimpleLauncher(use_sim_time = True)
 
-sl.declare_arg('namespace', default_value='bluerov2')
+sl.declare_arg('namespace', default_value='amarsmer')
 sl.declare_arg('ground_truth',default_value=True)
-sl.declare_arg('sliders',default_value=False)
+sl.declare_arg('sliders',default_value=True)
 sl.declare_arg('camera', True)
 sl.declare_arg('gazebo_world_name', 'none')
 
@@ -46,29 +46,15 @@ def launch_setup():
         else:
             # otherwise publish ground truth as another link to get, well, ground truth
             sl.node('pose_to_tf',parameters={'child_frame': ns+'/base_link_gt'})
-
-        # imu
-        for imu in ('mpu', 'lsm'):
-            bridges.append(GazeboBridge(f'{ns}/{imu}',
-                          imu, 'sensor_msgs/Imu', GazeboBridge.gz2ros))
-
-        # sonar (as laser scan for now...)
-        bridges.append(GazeboBridge(f'{ns}/sonar', 'sonar', 'sensor_msgs/LaserScan', GazeboBridge.gz2ros))
-        bridges.append(GazeboBridge(f'{ns}/sonar/points', 'cloud', 'sensor_msgs/PointCloud2', GazeboBridge.gz2ros))
-
-        # camera
-        if sl.arg('camera'):
-            bridges.append(GazeboBridge(f'{ns}/image', 'image', 'sensor_msgs/Image', GazeboBridge.gz2ros))
         
-        # tilt control
-        bridges.append(GazeboBridge(f'/model/{ns}/joint/tilt/0/cmd_pos',
-                                     'cmd_tilt', 'std_msgs/Float64', GazeboBridge.ros2gz))
-        
-        # thrusters
-        for thr in range(1, 7):
+        # thrusters and steering
+        for thr in range(1, 5):
             thruster = f'thruster{thr}'
             gz_thr_topic = f'/{ns}/{thruster}/cmd'
             bridges.append(GazeboBridge(gz_thr_topic, f'cmd_{thruster}', 'std_msgs/Float64', GazeboBridge.ros2gz))
+
+            steering = f'/model/{ns}/joint/thruster{thr}_steering/0/cmd_pos'
+            bridges.append(GazeboBridge(steering, f'cmd_{thruster}_steering', 'std_msgs/Float64', GazeboBridge.ros2gz))
 
         sl.create_gz_bridge(bridges)
 

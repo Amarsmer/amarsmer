@@ -22,21 +22,27 @@ cmd_thruster4:
         min: -40
         max: 40
         to: data
-cmd_thruster5:
+cmd_thruster1_steering:
     type: std_msgs/Float64
     thrust:
-        min: -40
-        max: 40
+        min: -pi/4
+        max: pi/4
         to: data
-cmd_thruster6:
+cmd_thruster2_steering:
     type: std_msgs/Float64
     thrust:
-        min: -40
-        max: 40
+        min: -pi/4
+        max: pi/4
         to: data
-cmd_tilt:
+cmd_thruster3_steering:
     type: std_msgs/Float64
-    angle:
-        min: -pi/3
-        max: pi/3
+    thrust:
+        min: -pi/4
+        max: pi/4
+        to: data
+cmd_thruster4_steering:
+    type: std_msgs/Float64
+    thrust:
+        min: -pi/4
+        max: pi/4
         to: data
