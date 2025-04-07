@@ -36,7 +36,7 @@
     <link name="${ns}/base_link">
     <inertial>
         <mass value="${mass}"/>
-        <origin xyz="0 0 ${z_cog}"/>
+        <origin xyz="0 0 ${z_cog}" rpy="0 ${pi/2} 0"/>
         
     <!-- BlueROV2 values from "Model Predictive Control for the BlueROV2", 
         Emil Már Einarsson, Andris Lipenitis, Master thesis, 2020 
@@ -51,6 +51,7 @@
         izz="${mass/12*(x_size*x_size + y_size*y_size)}" />-->
     </inertial>
     <visual>
+    <origin rpy="0 ${pi/2} 0" xyz="0 0 0"/>
       <geometry>
         <cylinder length="0.6" radius="0.2"/>
       </geometry>
@@ -75,7 +76,7 @@
     </link>
   
 <xacro:include filename="hydrodynamics.xacro"/>
-<xacro:include filename="thrusters.xacro"/>
+<xacro:include filename="thrusters_plasmar2.xacro"/>
 
   
 <!-- other Gazebo plugins -->
