@@ -8,7 +8,7 @@
   <xacro:property name="prop_l" value="0.035"/>
 
   <xacro:property name="cylinder_l" value="0.6"/>
-   <xacro:property name="cylinder_r" value="0.2"/>
+   <xacro:property name="cylinder_r" value="0.25"/>
 
 
 
@@ -108,7 +108,7 @@
 </gazebo>
 </xacro:macro>
 
-  <!-- all 6 thrusters -->
+  <!-- all 4 thrusters -->
     
   <xacro:thruster thruster_id="1">
     <origin xyz="-${cylinder_l/2} -${cylinder_r} 0" rpy="0 0 -${pi/2}"/>
