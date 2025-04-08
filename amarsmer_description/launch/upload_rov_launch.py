@@ -8,20 +8,25 @@ sl.declare_arg('sliders',default_value=True)
 sl.declare_arg('camera', True)
 sl.declare_arg('gazebo_world_name', 'none')
 
+sl.declare_arg('thr','thrusters')
+
 # initial pose
 sl.declare_gazebo_axes(x=1., y=0., z=1., roll=0.,pitch=0., yaw=0.)
+
 
 
 def launch_setup():
     
     ns = sl.arg('namespace')
+    thr = sl.arg('thr')
 
     if sl.arg('gazebo_world_name') != 'none':
         GazeboBridge.set_world_name(sl.arg('gazebo_world_name'))
     
     # robot state publisher
     sl.include('amarsmer_description', 'state_publisher_launch.py',
-               launch_arguments={'namespace': ns, 'use_sim_time': sl.sim_time, 'jsp': False})
+               launch_arguments={'namespace': ns, 'use_sim_time': sl.sim_time, 'jsp': False,
+                                 'thr': thr})
                
     with sl.group(ns=ns):
                     
@@ -48,18 +53,25 @@ def launch_setup():
             sl.node('pose_to_tf',parameters={'child_frame': ns+'/base_link_gt'})
         
         # thrusters and steering
-        for thr in range(1, 5):
-            thruster = f'thruster{thr}'
-            gz_thr_topic = f'/{ns}/{thruster}/cmd'
-            bridges.append(GazeboBridge(gz_thr_topic, f'cmd_{thruster}', 'std_msgs/Float64', GazeboBridge.ros2gz))
 
-            steering = f'/model/{ns}/joint/thruster{thr}_steering/0/cmd_pos'
-            bridges.append(GazeboBridge(steering, f'cmd_{thruster}_steering', 'std_msgs/Float64', GazeboBridge.ros2gz))
+        if thr == 'thrusters':
+
+            for thr in range(1, 5):
+                thruster = f'thruster{thr}'
+                gz_thr_topic = f'/{ns}/{thruster}/cmd'
+                bridges.append(GazeboBridge(gz_thr_topic, f'cmd_{thruster}', 'std_msgs/Float64', GazeboBridge.ros2gz))
+
+                steering = f'/model/{ns}/joint/thruster{thr}_steering/0/cmd_pos'
+                bridges.append(GazeboBridge(steering, f'cmd_{thruster}_steering', 'std_msgs/Float64', GazeboBridge.ros2gz))
+
+        elif thr == 'thrusters_plasmar1':
+            pass
 
         sl.create_gz_bridge(bridges)
 
         if sl.arg('sliders'):
-            sl.node('slider_publisher', arguments=[sl.find('amarsmer_description', 'manual.yaml')])
+            # TODO create .yaml file for each thruster config
+            sl.node('slider_publisher', arguments=[sl.find('amarsmer_description', thr+'.yaml')])
     
     return sl.launch_description()
 

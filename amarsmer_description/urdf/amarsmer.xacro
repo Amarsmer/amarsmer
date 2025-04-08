@@ -8,8 +8,11 @@
   <xacro:arg name="namespace" default="amarsmer"/>
   <!-- thruster joints are fixed if not for gazebo use -->
   <xacro:arg name="simulation" default="true"/>
+
+  <xacro:arg name="thrusters" default="thrusters"/>
   
   <xacro:arg name="density" default="1000"/>
+
   
   <xacro:property name="ns" value="$(arg namespace)"/>
   <xacro:property name="density" value="$(arg density)"/>
@@ -76,7 +79,7 @@
     </link>
   
 <xacro:include filename="hydrodynamics.xacro"/>
-<xacro:include filename="thrusters_plasmar1.xacro"/>
+<xacro:include filename="$(arg thrusters).xacro"/>
 
   
 <!-- other Gazebo plugins -->
