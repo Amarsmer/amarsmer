@@ -8,7 +8,7 @@ sl.declare_arg('sliders',default_value=True)
 sl.declare_arg('camera', True)
 sl.declare_arg('gazebo_world_name', 'none')
 
-sl.declare_arg('thr','thrusters')
+sl.declare_arg('thr','thrusters_plasmar2')
 
 # initial pose
 sl.declare_gazebo_axes(x=1., y=0., z=1., roll=0.,pitch=0., yaw=0.)
@@ -54,14 +54,14 @@ def launch_setup():
         
         # thrusters and steering
 
-        if thr == 'thrusters':
+        if thr == 'thrusters_plasmar2':
 
-            for thr in range(1, 5):
-                thruster = f'thruster{thr}'
+            for t in range(1, 5):
+                thruster = f'thruster{t}'
                 gz_thr_topic = f'/{ns}/{thruster}/cmd'
                 bridges.append(GazeboBridge(gz_thr_topic, f'cmd_{thruster}', 'std_msgs/Float64', GazeboBridge.ros2gz))
 
-                steering = f'/model/{ns}/joint/thruster{thr}_steering/0/cmd_pos'
+                steering = f'/model/{ns}/joint/thruster{t}_steering/0/cmd_pos'
                 bridges.append(GazeboBridge(steering, f'cmd_{thruster}_steering', 'std_msgs/Float64', GazeboBridge.ros2gz))
 
         elif thr == 'thrusters_plasmar1':
@@ -71,7 +71,7 @@ def launch_setup():
 
         if sl.arg('sliders'):
             # TODO create .yaml file for each thruster config
-            sl.node('slider_publisher', arguments=[sl.find('amarsmer_description', thr+'.yaml')])
+            sl.node('slider_publisher', arguments=[sl.find('amarsmer_description', thr +'.yaml')])
     
     return sl.launch_description()
 

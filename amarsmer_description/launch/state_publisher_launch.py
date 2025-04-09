@@ -6,7 +6,7 @@ sl = SimpleLauncher(use_sim_time = False)
 sl.declare_arg('namespace', default_value='amarsmer')
 sl.declare_arg('jsp', True)
 sl.declare_arg('rviz', True)
-sl.declare_arg('thr','thrusters')
+sl.declare_arg('thr','thrusters_plasmar2')
 
 
 def launch_setup():
