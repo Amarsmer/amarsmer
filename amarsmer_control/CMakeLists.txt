@@ -3,7 +3,7 @@ project(amarsmer_control)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS src/control.py
         DESTINATION lib/${PROJECT_NAME})
 
