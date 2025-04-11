@@ -40,13 +40,12 @@
       max_thrust: 40.
       min_thrust: -40.
       thruster_prefix: ''
+      use_tf: True
       thrusters:
       - thruster1
       - thruster2
       - thruster3
       - thruster4
-      - thruster5
-      - thruster6
       use_gz_plugin: true
     use_sim_time: true
     x:

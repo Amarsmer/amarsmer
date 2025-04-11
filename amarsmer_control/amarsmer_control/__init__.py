@@ -5,6 +5,7 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import Float64
 from sensor_msgs.msg import JointState
 from scipy.spatial.transform import Rotation
+from urdf_parser_py import urdf
 from numpy import array
 
 
@@ -14,10 +15,9 @@ def convert(v):
 
 class ROV:
 
-
-
     def __init__(self, node: Node,
-                 thrusters = [], joints = []):
+                 thrusters = [], joints = [],
+                 model = None):
 
         self.joints = joints
         self.q = [0 for _ in self.joints]

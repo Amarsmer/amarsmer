@@ -12,7 +12,7 @@ from std_msgs.msg import String
 class Controller(Node):
     def __init__(self):
 
-        super().__init__('control', namespace='amarsmer')
+        super().__init__('control', namespace='bluerov2')
 
         thrusters = [f'thruster{i}' for i in range(1,5)]
         joints = [f'thruster{i}_steering' for i in range(1,5)]
@@ -34,14 +34,31 @@ class Controller(Node):
         print(len(self.robot.joints), 'joints')
         print(len(self.robot.links), 'links')
 
-        j1 = self.robot.joints[0]
-        print(j1.parent, j1.child, j1.axis)
+
+        for j in self.robot.joints:
+            if j.type == 'continuous':
+                print('found thruster', j.name)
 
         l1 = self.robot.links[0]
         print('mass:',l1.inertial.mass)
 
+        Ma = [0]*6
+        Dl = [0]*6
+        Dq = [0]*6
 
-
+        for gz in self.robot.gazebos:
+            for plugin in gz.findall('plugin'):
+                if 'Hydrodynamics' in plugin.get('name'):
+                    for i,(axis,force) in enumerate(('xU','yV','zW', 'kP', 'mQ', 'nR')):
+                        for tag in plugin.findall(axis+force):
+                            Dl[i] = float(tag.text)
+                        for tag in plugin.findall(f'{axis}{force}abs{force}'):
+                            Dq[i] = float(tag.text)
+                        for tag in plugin.findall(f'{axis}Dot{force}'):
+                            Ma[i] = float(tag.text)
+        print(Ma)
+        print(Dl)
+        print(Dq)
 
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
