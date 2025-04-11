@@ -4,7 +4,8 @@ This repository contains the robot description and necessary launch files to des
 
 Additionnal steps are included to make sure this can be used starting from a fresh Ubuntu install.
 
-NOTE: Some of this document is taken from the original [BlueROV2](https://github.com/CentraleNantesROV/bluerov2/tree/main) readme and does not currently apply
+NOTE: Some of this document is takenbuild
+ from the original [BlueROV2](https://github.com/CentraleNantesROV/bluerov2/tree/main) readme and does not currently apply
 
 # Requirements
 
@@ -48,17 +49,17 @@ The current recommended ROS2 version is Jazzy. All the related info can be found
 
 Gazebo will:
 
-    Subscribe to /bluerov2/cmd_thruster[1..6] and expect std_msgs/Float64 messages, being the thrust in Newton
-    Publish sensor data to various topics (image, mpu+lsm for IMU, cloud for the sonar, odom)
-    Publish the ground truth on /bluerov2/pose_gt. This pose is forwarded to /tf if pose_to_tf is used.
+Subscribe to /bluerov2/cmd_thruster[1..6] and expect std_msgs/Float64 messages, being the thrust in Newton
+Publish sensor data to various topics (image, mpu+lsm for IMU, cloud for the sonar, odom)
+Publish the ground truth on /bluerov2/pose_gt. This pose is forwarded to /tf if pose_to_tf is used.
 
 # High-level control (TODO)
 
 Basic control is available in the [auv_control package](https://github.com/CentraleNantesROV/auv_control)
 
-In this case spawn the robot without manual sliders and run e.g. a cascaded PID controller:
+First run world_launch, then:
 
-~~`ros2 launch bluerov2_description upload_bluerov2_launch.py`~~
+`ros2 launch amarsmer_control control_launch.py`
 
 ~~`ros2 launch bluerov2_control cascaded_pids_launch.py sliders:=true`~~
 
