@@ -12,7 +12,7 @@ from std_msgs.msg import String
 class Controller(Node):
     def __init__(self):
 
-        super().__init__('control', namespace='bluerov2')
+        super().__init__('control', namespace='amarsmer')
 
         thrusters = [f'thruster{i}' for i in range(1,5)]
         joints = [f'thruster{i}_steering' for i in range(1,5)]
@@ -22,7 +22,7 @@ class Controller(Node):
         self.robot_sub = self.create_subscription(String, 'robot_description',
                                                   self.read_model,
                                                   QoSProfile(depth=1,
-                                                    durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL))
+                                                    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
 
         self.timer = self.create_timer(0.1, self.move)
 
