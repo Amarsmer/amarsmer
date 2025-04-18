@@ -10,6 +10,7 @@ def generate_launch_description():
 
     with sl.group(if_arg='gui'):
         sl.gz_launch(sl.find('amarsmer_description', 'world.sdf'), "-r")
+        #sl.gz_launch(sl.find('amarsmer_description', 'path_markers.sdf'), "-r")
         
     with sl.group(unless_arg='gui'):
         sl.gz_launch(sl.find('amarsmer_description', 'world.sdf'), "-r -s")
