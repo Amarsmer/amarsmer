@@ -4,8 +4,7 @@ This repository contains the robot description and necessary launch files to des
 
 Additionnal steps are included to make sure this can be used starting from a fresh Ubuntu install.
 
-NOTE: Some of this document is takenbuild
- from the original [BlueROV2](https://github.com/CentraleNantesROV/bluerov2/tree/main) readme and does not currently apply
+NOTE: This package is a modified version of the original [BlueROV2](https://github.com/CentraleNantesROV/bluerov2/tree/main)
 
 # Requirements
 
@@ -24,7 +23,7 @@ The current recommended ROS2 version is Jazzy. All the related info can be found
 ## For the control part
 
 - [slider_publisher](https://github.com/oKermorgant/slider_publisher), installable through `apt install ros-${ROS_DISTRO}-slider-publisher`
-- [auv_control](https://github.com/CentraleNantesROV/auv_control) for basic control laws, from source
+- [auv_control](https://github.com/CentraleNantesROV/auv_control) for basic control laws
 - [urdf_parser](https://github.com/ros/urdf_parser_py) intended to have the controller work with any robot description
 
 # Installation
@@ -50,11 +49,11 @@ The current recommended ROS2 version is Jazzy. All the related info can be found
 
 Gazebo will:
 
-Subscribe to /bluerov2/cmd_thruster[1..6] and expect std_msgs/Float64 messages, being the thrust in Newton
-Publish sensor data to various topics (image, mpu+lsm for IMU, cloud for the sonar, odom)
-Publish the ground truth on /bluerov2/pose_gt. This pose is forwarded to /tf if pose_to_tf is used.
+- Subscribe to /amarsmer/cmd_thruster[i] and /amarsmer/cmd_thruster[i]_steering, and expect std_msgs/Float64 messages (for both), respectively being the thrust in Newton and the angle in radians.
+- NOT YET IMPLEMENTED: Publish sensor data to various topics (image, mpu+lsm for IMU, cloud for the sonar, odom)
+- Publish the ground truth on /amarsmer/pose_gt. This pose is forwarded to /tf if pose_to_tf is used.
 
-# High-level control (TODO)
+# High-level control
 
 Basic control is available in the [auv_control package](https://github.com/CentraleNantesROV/auv_control)
 
@@ -62,7 +61,9 @@ First run world_launch, then:
 
 `ros2 launch amarsmer_control control_launch.py`
 
-~~`ros2 launch bluerov2_control cascaded_pids_launch.py sliders:=true`~~
+The current node running an open-loop control can be ran as:
+
+`ros2 run amarsmer_control control.py`
 
 # License
-Amarsmer package is open-sourced under the Apache-2.0 license. See the LICENSE file for details.
+Amarsmer package is open-sourced under the MIT License. See the LICENSE file for details.
