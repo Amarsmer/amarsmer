@@ -7,7 +7,15 @@ def S(vec):
             [-vec[1], vec[0], 0]
         ])
 
-def hydrodynamic(rg, rb, pose, nu, nudot, added_masses, viscous_drag, quadratic_drag, inertia=None):
+def hydrodynamic(rg = np.zeros((3,1)), 
+                 rb = np.zeros((3,1)), 
+                 pose = np.zeros((3,1)), 
+                 nu = np.zeros((6,1)), 
+                 nudot = np.zeros((6,1)), 
+                 added_masses = np.zeros((6,1)), 
+                 viscous_drag = np.zeros((6,1)), 
+                 quadratic_drag = np.zeros((6,1)), 
+                 inertia=None):
     # --- Physical constants ---
     rho = 1026  # Density of water (kg/m^3)
     G = 9.81    # Gravitational acceleration (m/s^2)
@@ -20,8 +28,8 @@ def hydrodynamic(rg, rb, pose, nu, nudot, added_masses, viscous_drag, quadratic_
 
     # Center of gravity and buoyancy
     '''
-    rg = np.array([0.0, 0.0, 0.0])
-    rb = np.array([0.0, 0.0, 0.0])
+    rg = np.zeros((3,1))
+    rb = np.zeros((3,1))
     '''
     xg, yg, zg = rg
     xb, yb, zb = rb
