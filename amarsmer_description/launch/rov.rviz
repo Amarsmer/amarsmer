@@ -29,6 +29,16 @@ Panels:
 Visualization Manager:
   Class: ""
   Displays:
+    - Class: rviz_default_plugins/Path
+      Name: Set Path
+      Enabled: true
+      Topic: /set_path
+      Alpha: 1.0
+      Buffer Length: 1000
+      Color: 255; 0; 0  # Red
+      Line Style: Lines
+      Line Width: 0.1
+      Value: true
     - Alpha: 1
       Class: rviz_default_plugins/RobotModel
       Collision Enabled: false
