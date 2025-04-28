@@ -14,45 +14,54 @@ class PathPublisher(Node):
         self.publisher = self.create_publisher(Path, 'set_path', 10)
         self.timer = self.create_timer(1.0, self.publish_path)
 
+        self.saved_path = Path()
+
+        # Subscriber
+        self.create_subscription(Path,'full_path', self.save_path, 10)
+
+    def save_path(self, msg: Path):
+        self.get_logger().info(f'Received path with {len(msg.poses)} poses')
+        self.saved_path = msg
+
     def publish_path(self):
-        path_msg = Path()
-        path_msg.header.frame_id = "world"
-        path_msg.header.stamp = self.get_clock().now().to_msg()
+        # path_msg = msg.data
+        # path_msg.header.frame_id = "world"
+        # path_msg.header.stamp = self.get_clock().now().to_msg()
 
-        # Path parameters
-        radius = 2.0
-        depth_per_circle = 1.0
-        num_turns = 3
-        steps_per_turn = 100
-        total_steps = num_turns * steps_per_turn
-        z_start = 0.0
+        # # Path parameters
+        # radius = 2.0
+        # depth_per_circle = 1.0
+        # num_turns = 3
+        # steps_per_turn = 100
+        # total_steps = num_turns * steps_per_turn
+        # z_start = 0.0
 
-        # Generate the path
-        t_vals = np.linspace(0, 2 * np.pi * num_turns, total_steps)
-        x_vals = radius * np.cos(t_vals)
-        y_vals = radius * np.sin(t_vals)
-        z_vals = z_start - (depth_per_circle * t_vals) / (2 * np.pi)
+        # # Generate the path
+        # t_vals = np.linspace(0, 2 * np.pi * num_turns, total_steps)
+        # x_vals = radius * np.cos(t_vals)
+        # y_vals = radius * np.sin(t_vals)
+        # z_vals = z_start - (depth_per_circle * t_vals) / (2 * np.pi)
 
-        for i in range(total_steps):
-            x, y, z = x_vals[i], y_vals[i], z_vals[i]
-            dx = -radius * np.sin(t_vals[i])
-            dy = radius * np.cos(t_vals[i])
-            yaw = np.arctan2(dy, dx)
-            quat = R.from_euler('zyx', [yaw, 0, 0]).as_quat()
+        # for i in range(total_steps):
+        #     x, y, z = x_vals[i], y_vals[i], z_vals[i]
+        #     dx = -radius * np.sin(t_vals[i])
+        #     dy = radius * np.cos(t_vals[i])
+        #     yaw = np.arctan2(dy, dx)
+        #     quat = R.from_euler('zyx', [yaw, 0, 0]).as_quat()
 
-            pose = PoseStamped()
-            pose.header.frame_id = "map"
-            pose.pose.position.x = x
-            pose.pose.position.y = y
-            pose.pose.position.z = z
-            pose.pose.orientation.x = quat[0]
-            pose.pose.orientation.y = quat[1]
-            pose.pose.orientation.z = quat[2]
-            pose.pose.orientation.w = quat[3]
+        #     pose = PoseStamped()
+        #     pose.header.frame_id = "map"
+        #     pose.pose.position.x = x
+        #     pose.pose.position.y = y
+        #     pose.pose.position.z = z
+        #     pose.pose.orientation.x = quat[0]
+        #     pose.pose.orientation.y = quat[1]
+        #     pose.pose.orientation.z = quat[2]
+        #     pose.pose.orientation.w = quat[3]
 
-            path_msg.poses.append(pose)
+        #     path_msg.poses.append(pose)
 
-        self.publisher.publish(path_msg)
+        self.publisher.publish(self.saved_path)
 
 
 def main(args=None):
