@@ -7,7 +7,7 @@ def generate_launch_description():
     
     sl.declare_arg('namespace', default_value='amarsmer')
     
-    sl.rviz(sl.find('amarsmer_description', 'rov.rviz'))
+    # sl.rviz(sl.find('amarsmer_description', 'rov.rviz'))
 
     with sl.group(ns=sl.arg('namespace')):
         sl.node('thruster_manager', 'publish_wrenches',

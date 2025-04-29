@@ -50,20 +50,21 @@ The current recommended ROS2 version is Jazzy. All the related info can be found
 Gazebo will:
 
 - Subscribe to /amarsmer/cmd_thruster[i] and /amarsmer/cmd_thruster[i]_steering, and expect std_msgs/Float64 messages (for both), respectively being the thrust in Newton and the angle in radians.
-- NOT YET IMPLEMENTED: Publish sensor data to various topics (image, mpu+lsm for IMU, cloud for the sonar, odom)
+- NOT YET IMPLEMENTED: ~~Publish sensor data to various topics (image, mpu+lsm for IMU, cloud for the sonar, odom)~~
 - Publish the ground truth on /amarsmer/pose_gt. This pose is forwarded to /tf if pose_to_tf is used.
 
 # High-level control
 
 Basic control is available in the [auv_control package](https://github.com/CentraleNantesROV/auv_control)
 
-First run world_launch, then:
-
-`ros2 launch amarsmer_control control_launch.py`
-
-The current node running an open-loop control can be ran as:
+The simple node running an open-loop control (use the world launch first) can be ran as:
 
 `ros2 run amarsmer_control control.py`
+
+The full launch file for MPC control (including world launch) is ran with:
+
+`ros2 launch amarsmer_control MPC_launch.py`
+
 
 # License
 Amarsmer package is open-sourced under the MIT License. See the LICENSE file for details.

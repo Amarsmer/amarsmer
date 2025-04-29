@@ -8,6 +8,8 @@ def generate_launch_description():
     sl.declare_arg('namespace', default_value='amarsmer')
     sl.declare_arg('sliders', default_value=True)
     sl.declare_arg('rviz', default_value=True)
+
+    sl.include('amarsmer_description','world_launch.py', launch_arguments={'sliders': False})
     
     with sl.group(ns=sl.arg('namespace')):
 

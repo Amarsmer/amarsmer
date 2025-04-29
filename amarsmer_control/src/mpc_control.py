@@ -12,11 +12,11 @@ from std_msgs.msg import String
 class Controller(Node):
     def __init__(self):
 
-        super().__init__('control', namespace='amarsmer')
+        super().__init__('mpc_control', namespace='amarsmer')
 
         thrusters = [f'thruster{i}' for i in range(1,5)]
         joints = [f'thruster{i}_steering' for i in range(1,5)]
-        self.rov = ROV(self, thrusters, joints)
+        self.rov = ROV(self, thrusters, joints, thrust_visual = True)
 
         self.robot = None
         self.robot_sub = self.create_subscription(String, 'robot_description',

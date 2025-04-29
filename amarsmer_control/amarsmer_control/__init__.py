@@ -3,6 +3,7 @@
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Float64
+from geometry_msgs.msg import WrenchStamped
 from sensor_msgs.msg import JointState
 from scipy.spatial.transform import Rotation
 from urdf_parser_py import urdf
@@ -17,7 +18,10 @@ class ROV:
 
     def __init__(self, node: Node,
                  thrusters = [], joints = [],
-                 model = None):
+                 model = None,
+                 thrust_visual = False):
+
+        self.display_wrench = thrust_visual # Creating and storing the bool so it may be accessed and changed during simulation if the need arises
 
         self.joints = joints
         self.q = [0 for _ in self.joints]
@@ -37,6 +41,11 @@ class ROV:
         self.joint_pub = []
         for joint in joints:
             self.joint_pub.append(node.create_publisher(Float64, 'cmd_'+joint, 1))
+
+        # Wrench publishers, used to display thrust
+        self.wrench_pub = []
+        for thr in thrusters: # A bit redundant with thruster_pub but easier to read and correct
+            self.wrench_pub.append(node.create_publisher(WrenchStamped, 'amarsmer_' + thr + '_wrench', 1)) 
 
     def ready(self):
         return self.p is not None
@@ -66,3 +75,17 @@ class ROV:
         for i, val in enumerate(angles):
             msg.data = float(val)
             self.joint_pub[i].publish(msg)
+
+        # Redundant again but future me might thank me
+        if self.display_wrench:
+            wrench_msg = WrenchStamped()
+            for i, val in enumerate(forces):
+                wrench_msg.header.frame_id = "amarsmer/thruster"+str(i+1)
+                # Create and publish WrenchStamped
+                wrench_msg.wrench.force.x = float(-val)
+                wrench_msg.wrench.force.y = 0.0
+                wrench_msg.wrench.force.z = 0.0
+                wrench_msg.wrench.torque.x = 0.0
+                wrench_msg.wrench.torque.y = 0.0
+                wrench_msg.wrench.torque.z = 0.0
+                self.wrench_pub[i].publish(wrench_msg)
