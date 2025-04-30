@@ -25,24 +25,24 @@ cmd_thruster4:
 cmd_thruster1_steering:
     type: std_msgs/Float64
     thrust:
-        min: -pi/4
-        max: pi/4
+        min: 0
+        max: -pi/2
         to: data
 cmd_thruster2_steering:
     type: std_msgs/Float64
     thrust:
-        min: -pi/4
-        max: pi/4
+        min: 0
+        max: pi/2
         to: data
 cmd_thruster3_steering:
     type: std_msgs/Float64
     thrust:
-        min: -pi/4
-        max: pi/4
+        min: 0
+        max: pi/2
         to: data
 cmd_thruster4_steering:
     type: std_msgs/Float64
     thrust:
-        min: -pi/4
-        max: pi/4
+        min: 0
+        max: -pi/2
         to: data

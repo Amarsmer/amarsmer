@@ -11,7 +11,7 @@ sl.declare_arg('gazebo_world_name', 'none')
 sl.declare_arg('thr','thrusters_plasmar2')
 
 # initial pose
-sl.declare_gazebo_axes(x=1., y=0., z=1., roll=0.,pitch=0., yaw=0.)
+sl.declare_gazebo_axes(x=0., y=0., z=0., roll=0.,pitch=0., yaw=0.)
 
 
 

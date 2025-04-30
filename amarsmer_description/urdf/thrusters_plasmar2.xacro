@@ -62,7 +62,7 @@
         <axis xyz="1 0 0" rpy="0 0 0"/>
       <parent link="${ns}/base_link" />
       <child link="${ns}/thruster${thruster_id}_steering" />
-      <limit effort="100" velocity="40" lower="${-pi/4}" upper="${pi/4}"/>
+      <limit effort="100" velocity="40" lower="${-pi/2}" upper="${pi/2}"/>
     </joint>
 
     <!-- Joint between thruster link and vehicle base link -->    
@@ -93,8 +93,8 @@
             <propeller_diameter>${2*prop_r}</propeller_diameter>
             <velocity_control>true</velocity_control>
             <use_angvel_cmd>false</use_angvel_cmd>
-            <max_thrust_cmd>40</max_thrust_cmd>
-            <min_thrust_cmd>-40</min_thrust_cmd>
+            <max_thrust_cmd>400</max_thrust_cmd>
+            <min_thrust_cmd>-400</min_thrust_cmd>
         </plugin>
 
     <plugin filename="ignition-gazebo-joint-position-controller-system" name="ignition::gazebo::systems::JointPositionController">
@@ -119,11 +119,11 @@
   </xacro:thruster>
 
   <xacro:thruster thruster_id="3">
-    <origin xyz="0 0 -${cylinder_r}" rpy="${pi/2} ${pi/2} 0"/>
+    <origin xyz="0 0 -${cylinder_r}" rpy="${pi/2} ${pi/2} ${pi/2}"/>
   </xacro:thruster>
 
   <xacro:thruster thruster_id="4">
-    <origin xyz="0 0 ${cylinder_r}" rpy="-${pi/2} -${pi/2} 0"/>
+    <origin xyz="0 0 ${cylinder_r}" rpy="-${pi/2} -${pi/2} ${pi/2}"/>
   </xacro:thruster>
   
 </robot>

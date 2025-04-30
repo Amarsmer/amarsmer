@@ -4,8 +4,8 @@
     publish_joint_state: true
     tam:
       deadzone: 1.
-      max_thrust: 40.0
-      min_thrust: -40.0
+      max_thrust: 400.0
+      min_thrust: -400.0
       thruster_prefix: ''
       use_gz_plugin: true
     use_sim_time: true

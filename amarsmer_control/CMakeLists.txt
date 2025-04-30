@@ -9,6 +9,9 @@ install(PROGRAMS src/control.py
 install(PROGRAMS src/mpc_control.py
         DESTINATION lib/${PROJECT_NAME})
 
+install(PROGRAMS src/pose_to_rpy.py
+        DESTINATION lib/${PROJECT_NAME})
+
 install(PROGRAMS src/path_publisher.py
         DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS src/path_generation.py

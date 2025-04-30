@@ -82,7 +82,7 @@ class ROV:
             for i, val in enumerate(forces):
                 wrench_msg.header.frame_id = "amarsmer/thruster"+str(i+1)
                 # Create and publish WrenchStamped
-                wrench_msg.wrench.force.x = float(-val)
+                wrench_msg.wrench.force.x = float(val)
                 wrench_msg.wrench.force.y = 0.0
                 wrench_msg.wrench.force.z = 0.0
                 wrench_msg.wrench.torque.x = 0.0
