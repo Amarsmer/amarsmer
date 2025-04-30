@@ -24,7 +24,7 @@ class PathGeneration(Node):
         self.pose_publisher = self.create_publisher(PoseStamped, 'desired_pose', 10)
 
         # Subscriber
-        self.create_subscription(Float32, 'request', self.request_callback, 10)
+        self.create_subscription(Float32, '/request', self.request_callback, 10)
 
         # Generate and publish the full path once
         self.generate_and_publish_path()
@@ -89,7 +89,7 @@ class PathGeneration(Node):
         desired_pose = self.path(time_request)
         desired_pose.header.stamp = self.get_clock().now().to_msg()
         self.pose_publisher.publish(desired_pose)
-        self.get_logger().info(f'Published desired pose for time {time_request:.2f} seconds.')
+        # self.get_logger().info(f'Published desired pose for time {time_request:.2f} seconds.')
 
 
 def main(args=None):
