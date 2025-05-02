@@ -41,7 +41,7 @@ The current recommended ROS2 version is Jazzy. All the related info can be found
 
     `ros2 launch amarsmer_description state_publisher_launch.py`
 
-- To run a demonstration with the vehicle, you can run a Gazebo scenario, sand spawn the robot with a GUI to control the thrusters:
+- To run a demonstration with the vehicle, you can run a Gazebo scenario, and spawn the robot with a GUI to control the thrusters:
 
     `ros2 launch amarsmer_description world_launch.py sliders:=true`
 

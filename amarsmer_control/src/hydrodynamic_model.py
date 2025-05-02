@@ -10,19 +10,19 @@ def S(vec):
         [-vec[1], vec[0], 0]
     ])
 
-def hydrodynamic(rg = np.zeros((3,1)), 
-                 rb = np.zeros((3,1)), 
-                 pose = np.zeros((6,1)), 
-                 nu = np.zeros((6,1)), 
-                 nudot = np.zeros((6,1)), 
-                 added_masses = np.zeros((6,1)), 
-                 viscous_drag = np.zeros((6,1)), 
-                 quadratic_drag = np.zeros((6,1)), 
+def hydrodynamic(rg = np.zeros(3), 
+                 rb = np.zeros(3), 
+                 eta = np.zeros(6), 
+                 nu = np.zeros(6), 
+                 nudot = np.zeros(6), 
+                 added_masses = np.zeros(6), 
+                 viscous_drag = np.zeros(6), 
+                 quadratic_drag = np.zeros(6), 
                  inertia=None):
     # --- Flatten all input vectors ---
     rg = np.asarray(rg).flatten()
     rb = np.asarray(rb).flatten()
-    pose = np.asarray(pose).flatten()
+    eta = np.asarray(eta).flatten()
     nu = np.asarray(nu).flatten()
     nudot = np.asarray(nudot).flatten()
     added_masses = np.asarray(added_masses).flatten()
@@ -44,7 +44,7 @@ def hydrodynamic(rg = np.zeros((3,1)),
     xb, yb, zb = rb
 
     # Orientation angles
-    phi, theta, psi = pose[3:]
+    phi, theta, psi = eta[3:]
 
     # Linear and angular velocities
     nu_1 = nu[:3]

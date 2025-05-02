@@ -10,6 +10,7 @@ from urdf_parser_py import urdf
 from std_msgs.msg import String, Float32
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped, Pose, Twist, Point, Quaternion, Vector3
+from scipy.spatial.transform import Rotation as R
 
 
 class Controller(Node):
@@ -22,6 +23,8 @@ class Controller(Node):
         self.rov = ROV(self, thrusters, joints, thrust_visual = True)
 
         self.robot = None
+
+        # Publisher and subscribers
         self.robot_sub = self.create_subscription(String, 'robot_description',
                                                   self.read_model,
                                                   QoSProfile(depth=1,
@@ -33,9 +36,16 @@ class Controller(Node):
         self.pose_subscriber = self.create_subscription(PoseStamped, '/desired_pose', self.pose_callback, 10)
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
 
-        self.desired_pose = PoseStamped()
-        self.current_pose = Pose()
+        self.desired_pose = None
+        self.current_pose = None
         self.current_twist = Twist()
+
+        # Model
+        self.mass = None
+        self.added_masses = None
+        self.viscous_drag = None
+        self.quadratic_drag = None
+
 
 
     def read_model(self, msg):
@@ -51,7 +61,9 @@ class Controller(Node):
                 print('found thruster', j.name)
 
         l1 = self.robot.links[0]
-        print('mass:',l1.inertial.mass)
+        # print('mass:',l1.inertial.mass)
+        # print('rg:', l1.inertial.origin)
+        # print('inertia:', l1.inertial.inertia)
 
         Ma = [0]*6
         Dl = [0]*6
@@ -71,19 +83,55 @@ class Controller(Node):
         print(Dl)
         print(Dq)
 
+        
+        self.mass = l1.inertial.mass
+        self.added_masses = Ma
+        self.viscous_drag = Dl
+        self.quadratic_drag = Dq
+
+        read_inertia = l1.inertial.inertia
+        self.inertia = np.array([
+            read_inertia.ixx,
+            read_inertia.ixy,
+            read_inertia.ixz,
+            read_inertia.iyy,
+            read_inertia.iyz,
+            read_inertia.izz
+        ])
+
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
         return s + ns*1e-9
 
+    def pose_to_array(self, msg_pose):
+        # Extract position
+        x = msg_pose.position.x
+        y = msg_pose.position.y
+        z = msg_pose.position.z
+
+        # Extract orientation (quaternion)
+        qx = msg_pose.orientation.x
+        qy = msg_pose.orientation.y
+        qz = msg_pose.orientation.z
+        qw = msg_pose.orientation.w
+
+        # Convert quaternion to roll, pitch, yaw
+        rot = R.from_quat([qx, qy, qz, qw])
+        roll, pitch, yaw = rot.as_euler('xyz', degrees=False)
+
+        return [x,y,z,roll,pitch,yaw]
+
     def pose_callback(self, msg: PoseStamped):
-        self.desired_pose = msg
-        print(self.desired_pose)
+        # Extract pose
+        msg_pose = msg.pose.pose
+
+        self.desired_pose = self.pose_to_array(msg_pose)
 
     def odom_callback(self, msg: Odometry):
         # Extract pose
-        self.pose = msg.pose.pose
-        # position = pose.position
-        # orientation = pose.orientation
+        msg_pose = msg.pose.pose
+
+        self.current_pose = self.pose_to_array(msg_pose)
 
         # Extract twist
         twist = msg.twist.twist
@@ -100,8 +148,16 @@ class Controller(Node):
         t = self.get_time()
         self.time_publisher.publish(Float32(data=t))
 
-        tau = hydrodynamic()
-        # self.get_logger().info(f"{tau}")
+        tau = hydrodynamic(rg = np.zeros(3), 
+                 rb = np.zeros(3), 
+                 eta = self.current_pose, 
+                 nu = np.zeros(6), 
+                 nudot = np.zeros(6), 
+                 added_masses = self.added_masses, 
+                 viscous_drag = self.viscous_drag, 
+                 quadratic_drag = self.quadratic_drag, 
+                 inertia=self.inertia)
+        self.get_logger().info(f"{tau}")
 
         #TODO MPC control
 
