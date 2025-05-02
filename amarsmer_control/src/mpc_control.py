@@ -38,7 +38,7 @@ class Controller(Node):
 
         self.desired_pose = None
         self.current_pose = None
-        self.current_twist = Twist()
+        self.current_twist = None
 
         # Model
         self.mass = None
@@ -135,8 +135,15 @@ class Controller(Node):
 
         # Extract twist
         twist = msg.twist.twist
-        # linear = twist.linear
-        # angular = twist.angular
+        x = twist.linear.x
+        y = twist.linear.y
+        z = twist.linear.z
+
+        p = twist.angular.x
+        q = twist.angular.y
+        r = twist.angular.z
+        
+        self.current_twist = [x,y,z,p,q,r]
 
         # self.get_logger().info(f"{self.pose}")
         # self.get_logger().info(f"{self.twist}")
@@ -157,7 +164,8 @@ class Controller(Node):
                  viscous_drag = self.viscous_drag, 
                  quadratic_drag = self.quadratic_drag, 
                  inertia=self.inertia)
-        self.get_logger().info(f"{tau}")
+
+        # self.get_logger().info(f"{tau}")
 
         #TODO MPC control
 
