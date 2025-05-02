@@ -4,11 +4,12 @@ from rclpy.node import Node, QoSProfile
 from rclpy.qos import QoSDurabilityPolicy
 import rclpy
 from amarsmer_control import ROV
-from math import cos
+import numpy as np
+from hydrodynamic_model import hydrodynamic
 from urdf_parser_py import urdf
-from std_msgs.msg import String
-from std_msgs.msg import Float32
-from geometry_msgs.msg import PoseStamped
+from std_msgs.msg import String, Float32
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseStamped, Pose, Twist, Point, Quaternion, Vector3
 
 
 class Controller(Node):
@@ -30,8 +31,11 @@ class Controller(Node):
 
         self.time_publisher = self.create_publisher(Float32, '/request', 10)
         self.pose_subscriber = self.create_subscription(PoseStamped, '/desired_pose', self.pose_callback, 10)
+        self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
 
         self.desired_pose = PoseStamped()
+        self.current_pose = Pose()
+        self.current_twist = Twist()
 
 
     def read_model(self, msg):
@@ -75,6 +79,20 @@ class Controller(Node):
         self.desired_pose = msg
         print(self.desired_pose)
 
+    def odom_callback(self, msg: Odometry):
+        # Extract pose
+        self.pose = msg.pose.pose
+        # position = pose.position
+        # orientation = pose.orientation
+
+        # Extract twist
+        twist = msg.twist.twist
+        # linear = twist.linear
+        # angular = twist.angular
+
+        # self.get_logger().info(f"{self.pose}")
+        # self.get_logger().info(f"{self.twist}")
+
     def move(self):
         if not self.rov.ready() or self.robot is None:
             return
@@ -82,11 +100,14 @@ class Controller(Node):
         t = self.get_time()
         self.time_publisher.publish(Float32(data=t))
 
+        tau = hydrodynamic()
+        # self.get_logger().info(f"{tau}")
+
         #TODO MPC control
 
         # give thruster forces and joint angles
         self.rov.move([10,-10,0,0],
-                      [t for i in range(1,5)])
+                      [np.pi/2*np.sin(t/10) for i in range(1,5)])
 
 
 rclpy.init()

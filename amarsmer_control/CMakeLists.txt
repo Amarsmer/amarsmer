@@ -11,6 +11,8 @@ install(PROGRAMS src/mpc_control.py
 
 install(PROGRAMS src/pose_to_rpy.py
         DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS src/hydrodynamic_model.py
+        DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS src/path_publisher.py
         DESTINATION lib/${PROJECT_NAME})

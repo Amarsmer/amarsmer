@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import numpy as np
 
 def S(vec):
@@ -19,19 +23,9 @@ def hydrodynamic(rg = np.zeros((3,1)),
                  viscous_drag = np.zeros((6,1)), 
                  quadratic_drag = np.zeros((6,1)), 
                  inertia=None):
-    # --- Flatten all input vectors ---
-    rg = np.asarray(rg).flatten()
-    rb = np.asarray(rb).flatten()
-    pose = np.asarray(pose).flatten()
-    nu = np.asarray(nu).flatten()
-    nudot = np.asarray(nudot).flatten()
-    added_masses = np.asarray(added_masses).flatten()
-    viscous_drag = np.asarray(viscous_drag).flatten()
-    quadratic_drag = np.asarray(quadratic_drag).flatten()
-
     # --- Physical constants ---
     rho = 1026  # Density of water (kg/m^3)
-    G_acc = 9.81    # Gravitational acceleration (m/s^2)
+    G = 9.81    # Gravitational acceleration (m/s^2)
 
     # --- Robot parameters ---
     R_r = 0.1     # Radius (m)
@@ -40,22 +34,38 @@ def hydrodynamic(rg = np.zeros((3,1)),
     V_r = np.pi * R_r**2 * L_r  # Volume of a cylinder (m^3)
 
     # Center of gravity and buoyancy
+    '''
+    rg = np.zeros((3,1))
+    rb = np.zeros((3,1))
+    '''
+    rg = np.asarray(rg).flatten()
+    rb = np.asarray(rb).flatten()
+
     xg, yg, zg = rg
     xb, yb, zb = rb
 
     # Orientation angles
+    #angles = np.array([0.0, 0.0, 0.0])
+    #angles = pose[3:]
     phi, theta, psi = pose[3:]
 
     # Linear and angular velocities
+    #nu = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    nu = np.asarray(nu).flatten()
     nu_1 = nu[:3]
     nu_2 = nu[3:]
 
     # Accelerations
+    #nudot = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    nudot = np.asarray(nudot).flatten()
     nudot_1 = nudot[:3]
     nudot_2 = nudot[3:]
 
     # --- Drag coefficients ---
+    #viscous = -np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
     Xu, Yv, Zw, Kp, Mq, Nr = viscous_drag
+
+    #quadratic = -np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
     Xuu, Yvv, Zww, Kpp, Mqq, Nrr = quadratic_drag
 
     # --- Inertia matrices ---
@@ -80,6 +90,7 @@ def hydrodynamic(rg = np.zeros((3,1)),
     ])
 
     M_a = -np.diag(added_masses)
+
     M = M_rb + M_a
 
     # --- C matrix ---
@@ -88,28 +99,28 @@ def hydrodynamic(rg = np.zeros((3,1)),
         [m_r * S(rg) @ S(nu_2), S(nu_2) @ I_b]
     ])
 
-    am_linear = added_masses[:3]
-    am_angular = added_masses[3:]
+    am_linear = np.asarray(added_masses[:3]).flatten()
+    am_angular = np.asarray(added_masses[3:]).flatten()
 
     C_a = np.block([
-        [np.zeros((3,3)), S(am_linear * nu_1)],
+        [np.zeros((3, 3)), S(am_linear * nu_1)],
         [S(am_linear * nu_1), S(am_angular * nu_2)]
     ])
 
     C = C_rb + C_a
 
     # --- G vector ---
-    W = m_r * G_acc
-    B = rho * G_acc * V_r
+    W = m_r * G
+    B = rho * G * V_r
 
-    G_vec = np.array([
+    G = np.asarray([
         (W - B) * np.sin(theta),
         -(W - B) * np.cos(theta) * np.sin(phi),
         -(W - B) * np.cos(theta) * np.cos(phi),
         -(yg * W - zb * B) * np.cos(theta) * np.cos(phi) + (zg * W - zb * B) * np.cos(theta) * np.sin(phi),
         (zg * W - zb * B) * np.sin(theta) + (xg * W - xb * B) * np.cos(theta) * np.cos(phi),
         -(xg * W - xb * B) * np.cos(theta) * np.sin(phi) - (yg * W - yb * B) * np.sin(theta)
-    ])
+    ]).flatten()
 
     # --- D matrix ---
     D = -np.diag([
@@ -122,5 +133,6 @@ def hydrodynamic(rg = np.zeros((3,1)),
     ])
 
     # --- Final tau computation ---
-    tau = M @ nudot + C @ nu + G_vec + D @ nu
+    tau = M @ nudot + C @ nu + G + D @ nu
+
     return tau
