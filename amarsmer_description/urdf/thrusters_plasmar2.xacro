@@ -62,7 +62,7 @@
         <axis xyz="1 0 0" rpy="0 0 0"/>
       <parent link="${ns}/base_link" />
       <child link="${ns}/thruster${thruster_id}_steering" />
-      <limit effort="100" velocity="40" lower="${-pi/2}" upper="${pi/2}"/>
+      <limit effort="100" velocity="40" lower="-1e16" upper="1e16"/>
     </joint>
 
     <!-- Joint between thruster link and vehicle base link -->    
