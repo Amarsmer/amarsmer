@@ -8,6 +8,8 @@ from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 from builtin_interfaces.msg import Time
 
+# Subscribes to path_generation and saves the full path msg, then publishes it to rviz
+
 class PathPublisher(Node):
     def __init__(self):
         super().__init__('path_publisher')
@@ -16,12 +18,12 @@ class PathPublisher(Node):
 
         self.saved_path = Path()
 
-        # Subscriber
         self.create_subscription(Path,'full_path', self.save_path, 10)
 
     def save_path(self, msg: Path):
         self.get_logger().info(f'Received path with {len(msg.poses)} poses')
         self.saved_path = msg
+        self.publisher.publish(self.saved_path)
 
     def publish_path(self):
         self.publisher.publish(self.saved_path)

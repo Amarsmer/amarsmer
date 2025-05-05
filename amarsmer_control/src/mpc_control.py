@@ -36,6 +36,10 @@ class Controller(Node):
         self.pose_subscriber = self.create_subscription(PoseStamped, '/desired_pose', self.pose_callback, 10)
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
 
+
+        ## Initiating variables
+
+        # Pose
         self.desired_pose = None
         self.current_pose = None
         self.current_twist = None
@@ -65,6 +69,7 @@ class Controller(Node):
         # print('rg:', l1.inertial.origin)
         # print('inertia:', l1.inertial.inertia)
 
+        # Read the robot's dynamic parameters
         Ma = [0]*6
         Dl = [0]*6
         Dq = [0]*6
@@ -79,31 +84,31 @@ class Controller(Node):
                             Dq[i] = float(tag.text)
                         for tag in plugin.findall(f'{axis}Dot{force}'):
                             Ma[i] = float(tag.text)
-        print(Ma)
-        print(Dl)
-        print(Dq)
+        # print(Ma)
+        # print(Dl)
+        # print(Dq)
 
-        
+        # Update robot's model for hydrodynamic computation
         self.mass = l1.inertial.mass
         self.added_masses = Ma
         self.viscous_drag = Dl
         self.quadratic_drag = Dq
 
         read_inertia = l1.inertial.inertia
-        self.inertia = np.array([
+        self.inertia = [
             read_inertia.ixx,
             read_inertia.ixy,
             read_inertia.ixz,
             read_inertia.iyy,
             read_inertia.iyz,
             read_inertia.izz
-        ])
+        ]
 
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
         return s + ns*1e-9
 
-    def pose_to_array(self, msg_pose):
+    def pose_to_array(self, msg_pose): # Used to convert pose msg to a regular array
         # Extract position
         x = msg_pose.position.x
         y = msg_pose.position.y
@@ -123,7 +128,7 @@ class Controller(Node):
 
     def pose_callback(self, msg: PoseStamped):
         # Extract pose
-        msg_pose = msg.pose.pose
+        msg_pose = msg.pose
 
         self.desired_pose = self.pose_to_array(msg_pose)
 
