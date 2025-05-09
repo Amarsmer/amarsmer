@@ -9,9 +9,9 @@ from geometry_msgs.msg import PoseStamped
 from builtin_interfaces.msg import Time
 from amarsmer_interfaces.srv import RequestPath
 
-
-# Subscribes to path_generation and saves the full path msg, then publishes it to rviz
-
+"""
+Sends a client request to path_generation and saves the full path msg, then publishes it to rviz
+"""
 class PathPublisher(Node):
     def __init__(self):
         super().__init__('path_publisher')
@@ -28,8 +28,7 @@ class PathPublisher(Node):
 
         self.saved_path = Path()
 
-        # Subscribe and request the full path to be saved and published
-        # self.create_subscription(Path,'full_path', self.save_path, 10)
+        # Create a client and request the full path to be saved and published
         self.client = self.create_client(RequestPath, 'path_request')
 
         time_list = np.linspace(0, self.total_time, int(self.total_time/self.dt)+1, dtype=float)
@@ -43,11 +42,6 @@ class PathPublisher(Node):
             self.get_logger().info(f'Received path with {len(self.saved_path.poses)} poses.')
         else:
             self.get_logger().error('Failed to call service.')
-
-    # def save_path(self, msg: Path):
-    #     self.get_logger().info(f'Received path with {len(msg.poses)} poses')
-    #     self.saved_path = msg
-    #     self.publisher.publish(self.saved_path)
 
     def publish_path(self):
         self.publisher.publish(self.saved_path)

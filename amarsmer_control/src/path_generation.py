@@ -9,32 +9,23 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from amarsmer_interfaces.srv import RequestPath
 
+"""
+Creates a services that handle path generation requests. Receives a an array of time values and responds with the associated path.
+"""
 
 class PathGeneration(Node):
     def __init__(self):
         super().__init__('path_generation')
 
-        # Declare parameters
-        # self.declare_parameter('total_time', 30.0)
-        # self.declare_parameter('dt', 0.1)
-
-        # self.total_time = self.get_parameter('total_time').value
-        # self.dt = self.get_parameter('dt').value
-
         # Service
         self.path_service = self.create_service(RequestPath, 'path_request', self.generate_path)
 
-        # Publishers
-        # self.path_publisher = self.create_publisher(Path, 'full_path', 10)
-        self.pose_publisher = self.create_publisher(PoseStamped, 'desired_pose', 10)
-        self.path_publisher = self.create_publisher(Path, 'mpc_path', 10)
 
+        ## Single_pose request, probably obsolete as publishing a single element array to the service will return a single pose TODO: test this and adjust
         # Subscriber
         self.create_subscription(Float32, '/single_request', self.single_request, 10)
-        # self.create_subscription(Float32MultiArray, '/horizon_request', self.path_generation, 10)
-
-        # Generate and publish the full path once
-        # self.generate_and_publish_path()
+        # Publishers
+        self.pose_publisher = self.create_publisher(PoseStamped, 'desired_pose', 10)
 
     def single_pose(self, t: float) -> PoseStamped:
         """
@@ -46,7 +37,7 @@ class PathGeneration(Node):
         total_length = 2 * np.pi * num_turns
 
         # Normalize t
-        # t_normalized = (t / self.total_time) * total_length
+        # t = (t / self.total_time) * total_length
 
         x = radius * np.cos(t)
         y = radius * np.sin(t)
@@ -75,47 +66,19 @@ class PathGeneration(Node):
         path_msg = Path()
         path_msg.header.frame_id = 'world'
 
-        # self.get_logger().info(f'Received request: {request.path_request.data}')
-
-
         for t in request.path_request.data:
             temp_pose = self.single_pose(t)
-            # temp_pose.header.stamp = self.get_clock().now().to_msg()
+            temp_pose.header.stamp = self.get_clock().now().to_msg()
             path_msg.poses.append(temp_pose)
 
         response.path = path_msg
-
-        # self.mpc_path_publisher.publish(mpc_msg)
         return response
-
-    def generate_and_publish_path(self):
-        path_msg = Path()
-        path_msg.header.frame_id = "world"
-        path_msg.header.stamp = self.get_clock().now().to_msg()
-
-        t = 0.0
-        while t <= self.total_time:
-            pose = self.single_pose(t)
-            pose.header.stamp = self.get_clock().now().to_msg()
-            path_msg.poses.append(pose)
-            t += self.dt
-
-        # Wait for subscribers
-        while self.path_publisher.get_subscription_count() == 0:
-            self.get_logger().warn('Waiting for subscriber to full_path...')
-            rclpy.spin_once(self, timeout_sec=0.1)
-
-        self.path_publisher.publish(path_msg)
-        self.get_logger().info('Full path published.')
-
 
     def single_request(self, msg: Float32):
         time_request = msg.data
         desired_pose = self.single_pose(time_request)
         desired_pose.header.stamp = self.get_clock().now().to_msg()
         self.pose_publisher.publish(desired_pose)
-        # self.get_logger().info(f'Published desired pose for time {time_request:.2f} seconds.')
-
 
 def main(args=None):
     rclpy.init(args=args)

@@ -55,6 +55,7 @@ class Controller(Node):
         # MPC Parameters
         self.mpc_horizon = 20
         self.mpc_time = 2
+        self.mpc_path = Path()
 
 
 
@@ -163,13 +164,20 @@ class Controller(Node):
         if not self.rov.ready() or self.robot is None:
             return
 
-        # t = self.get_time()
-        # self.time_publisher.publish(Float32(data=t))
         """
-        mpc_time = np.linspace(0, self.mpc_time, self.mpc_horizon+1)
-        mpc_msg = Float32MultiArray()
-        mpc_msg.data = mpc_time
-        self.horizon_publisher.publish(mpc_msg)
+        # Create a client and request a path
+        self.client = self.create_client(RequestPath, 'path_request')
+
+        request = RequestPath.Request()
+        request.path_request.data = np.linspace(0, self.mpc_time, self.mpc_horizon + 1, dtype=float)
+
+        future = self.client.call_async(request)
+        rclpy.spin_until_future_complete(self, future)
+        if future.result():
+            self.saved_path = future.result().path
+            self.get_logger().info(f'Received path with {len(self.saved_path.poses)} poses.')
+        else:
+            self.get_logger().error('Failed to call service.')
         """
 
         tau = hydrodynamic(rg = np.zeros(3), 
