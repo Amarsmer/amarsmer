@@ -18,7 +18,6 @@ def generate_launch_description():
         # sl.node('slider_publisher', 'slider_publisher', name='joint_control',
         #         arguments=[sl.find('amarsmer_control', 'thrusters_plasmar2_joints.yaml')])
 
-
         sl.node('thruster_manager', 'publish_wrenches',
                 parameters={'control_frame': 'amarsmer/base_link',
                         'use_gz_topics': sl.sim_time})

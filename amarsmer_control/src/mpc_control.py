@@ -7,10 +7,11 @@ from amarsmer_control import ROV
 import numpy as np
 from hydrodynamic_model import hydrodynamic
 from urdf_parser_py import urdf
-from std_msgs.msg import String, Float32
-from nav_msgs.msg import Odometry
+from std_msgs.msg import String, Float32, Float32MultiArray
+from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import PoseStamped, Pose, Twist, Point, Quaternion, Vector3
 from scipy.spatial.transform import Rotation as R
+from amarsmer_interfaces.srv import RequestPath
 
 
 class Controller(Node):
@@ -32,7 +33,8 @@ class Controller(Node):
 
         self.timer = self.create_timer(0.1, self.move)
 
-        self.time_publisher = self.create_publisher(Float32, '/request', 10)
+        self.time_publisher = self.create_publisher(Float32, '/single_request', 10)
+        self.horizon_publisher = self.create_publisher(Float32MultiArray, '/horizon_request', 10)
         self.pose_subscriber = self.create_subscription(PoseStamped, '/desired_pose', self.pose_callback, 10)
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
 
@@ -49,6 +51,10 @@ class Controller(Node):
         self.added_masses = None
         self.viscous_drag = None
         self.quadratic_drag = None
+
+        # MPC Parameters
+        self.mpc_horizon = 20
+        self.mpc_time = 2
 
 
 
@@ -157,8 +163,14 @@ class Controller(Node):
         if not self.rov.ready() or self.robot is None:
             return
 
-        t = self.get_time()
-        self.time_publisher.publish(Float32(data=t))
+        # t = self.get_time()
+        # self.time_publisher.publish(Float32(data=t))
+        """
+        mpc_time = np.linspace(0, self.mpc_time, self.mpc_horizon+1)
+        mpc_msg = Float32MultiArray()
+        mpc_msg.data = mpc_time
+        self.horizon_publisher.publish(mpc_msg)
+        """
 
         tau = hydrodynamic(rg = np.zeros(3), 
                  rb = np.zeros(3), 
@@ -176,7 +188,7 @@ class Controller(Node):
 
         # give thruster forces and joint angles
         self.rov.move([10,-10,0,0],
-                      [np.pi/2*np.sin(t/10) for i in range(1,5)])
+                      [0 for i in range(1,5)])
 
 
 rclpy.init()
