@@ -12,6 +12,8 @@ from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import PoseStamped, Pose, Twist, Point, Quaternion, Vector3
 from scipy.spatial.transform import Rotation as R
 from amarsmer_interfaces.srv import RequestPath
+import time
+# import ur_mpc.py
 
 
 class Controller(Node):
@@ -33,11 +35,18 @@ class Controller(Node):
 
         self.timer = self.create_timer(0.1, self.move)
 
-        self.time_publisher = self.create_publisher(Float32, '/single_request', 10)
-        self.horizon_publisher = self.create_publisher(Float32MultiArray, '/horizon_request', 10)
-        self.pose_subscriber = self.create_subscription(PoseStamped, '/desired_pose', self.pose_callback, 10)
+        # self.time_publisher = self.create_publisher(Float32, '/single_request', 10)
+        # self.horizon_publisher = self.create_publisher(Float32MultiArray, '/horizon_request', 10)
+        # self.pose_subscriber = self.create_subscription(PoseStamped, '/desired_pose', self.pose_callback, 10)
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
 
+        # Create a client for path request
+        self.client = self.create_client(RequestPath, '/path_request')
+
+        while not self.client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info("Waiting for service...")
+        
+        self.future = None
 
         ## Initiating variables
 
@@ -164,21 +173,30 @@ class Controller(Node):
         if not self.rov.ready() or self.robot is None:
             return
 
-        """
-        # Create a client and request a path
-        self.client = self.create_client(RequestPath, 'path_request')
+        t = self.get_time()
 
+        # Check if previous future is still pending
+        if self.future is not None:
+            if self.future.done():
+                try:
+                    result = self.future.result()
+                    if result is not None:
+                        self.mpc_path = result.path
+                        self.get_logger().info(f"Received path with {len(self.mpc_path.poses)} poses.")
+                    else:
+                        self.get_logger().error("Service returned None.")
+                except Exception as e:
+                    self.get_logger().error(f"Service call raised exception: {e}")
+                finally:
+                    self.future = None
+                return
+
+        # Send new request
         request = RequestPath.Request()
-        request.path_request.data = np.linspace(0, self.mpc_time, self.mpc_horizon + 1, dtype=float)
+        request.path_request.data = np.linspace(t, t + self.mpc_time, int(self.mpc_horizon) + 1, dtype=float)
 
-        future = self.client.call_async(request)
-        rclpy.spin_until_future_complete(self, future)
-        if future.result():
-            self.saved_path = future.result().path
-            self.get_logger().info(f'Received path with {len(self.saved_path.poses)} poses.')
-        else:
-            self.get_logger().error('Failed to call service.')
-        """
+        self.future = self.client.call_async(request)
+        
 
         tau = hydrodynamic(rg = np.zeros(3), 
                  rb = np.zeros(3), 

@@ -31,6 +31,10 @@ class PathPublisher(Node):
         # Create a client and request the full path to be saved and published
         self.client = self.create_client(RequestPath, 'path_request')
 
+        while not self.client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info("Waiting for service...")
+
+
         time_list = np.linspace(0, self.total_time, int(self.total_time/self.dt)+1, dtype=float)
 
         request = RequestPath.Request()

@@ -17,15 +17,20 @@ class PathGeneration(Node):
     def __init__(self):
         super().__init__('path_generation')
 
+        # Declare parameters
+        self.declare_parameter('display_log', True)
+
+        self.display_log = self.get_parameter('display_log').value
+
         # Service
-        self.path_service = self.create_service(RequestPath, 'path_request', self.generate_path)
+        self.path_service = self.create_service(RequestPath, '/path_request', self.generate_path)
 
 
         ## Single_pose request, probably obsolete as publishing a single element array to the service will return a single pose TODO: test this and adjust
         # Subscriber
-        self.create_subscription(Float32, '/single_request', self.single_request, 10)
+        # self.create_subscription(Float32, '/single_request', self.single_request, 10)
         # Publishers
-        self.pose_publisher = self.create_publisher(PoseStamped, 'desired_pose', 10)
+        # self.pose_publisher = self.create_publisher(PoseStamped, 'desired_pose', 10)
 
     def single_pose(self, t: float) -> PoseStamped:
         """
@@ -63,6 +68,9 @@ class PathGeneration(Node):
         return pose
 
     def generate_path(self, request, response):
+        if self.display_log:
+            self.get_logger().info(f"Received path_request of type: {type(request.path_request)}")
+
         path_msg = Path()
         path_msg.header.frame_id = 'world'
 
@@ -72,6 +80,10 @@ class PathGeneration(Node):
             path_msg.poses.append(temp_pose)
 
         response.path = path_msg
+
+        if self.display_log:
+            self.get_logger().info("Returning response...")
+
         return response
 
     def single_request(self, msg: Float32):
