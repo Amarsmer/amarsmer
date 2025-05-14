@@ -3,8 +3,9 @@
 from rclpy.node import Node, QoSProfile
 from rclpy.qos import QoSDurabilityPolicy
 import rclpy
-from amarsmer_control import ROV
+import time
 import numpy as np
+from amarsmer_control import ROV
 from hydrodynamic_model import hydrodynamic
 from urdf_parser_py import urdf
 from std_msgs.msg import String, Float32, Float32MultiArray
@@ -12,8 +13,9 @@ from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import PoseStamped, Pose, Twist, Point, Quaternion, Vector3
 from scipy.spatial.transform import Rotation as R
 from amarsmer_interfaces.srv import RequestPath
-import time
-# import ur_mpc.py
+
+from ur_mpc import MPC_solve
+from visualization_msgs.msg import Marker
 
 
 class Controller(Node):
@@ -34,6 +36,7 @@ class Controller(Node):
                                                   durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
 
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
+        self.pose_arrow_publisher = self.create_publisher(Marker, "/pose_arrow", 10)
 
         # Create a client for path request
         self.client = self.create_client(RequestPath, '/path_request')
@@ -166,6 +169,25 @@ class Controller(Node):
         # self.get_logger().info(f"{self.pose}")
         # self.get_logger().info(f"{self.twist}")
 
+    def create_pose_marker(self, pose):
+        marker = Marker()
+        marker.header.frame_id = "world"
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+        marker.scale.x = 0.5  # shaft length
+        marker.scale.y = 0.05  # shaft diameter
+        marker.scale.z = 0.05  # head diameter
+        marker.color.a = 1.0
+        marker.color.r = 0.0
+        marker.color.g = 0.0
+        marker.color.b = 1.0
+        marker.pose = pose  # your geometry_msgs/Pose
+
+        marker.id = 0
+        marker.lifetime.sec = 0  # persistent
+
+        self.pose_arrow_publisher.publish(marker)
+
     def move(self):
         if not self.rov.ready() or self.robot is None:
             return
@@ -195,22 +217,46 @@ class Controller(Node):
         self.future = self.client.call_async(request)
         
 
-        tau = hydrodynamic(rg = np.zeros(3), 
-                 rb = np.zeros(3), 
-                 eta = self.current_pose, 
-                 nu = np.zeros(6), 
-                 nudot = np.zeros(6), 
-                 added_masses = self.added_masses, 
-                 viscous_drag = self.viscous_drag, 
-                 quadratic_drag = self.quadratic_drag, 
-                 inertia=self.inertia)
+        # tau = hydrodynamic(rg = np.zeros(3), 
+        #          rb = np.zeros(3), 
+        #          eta = self.current_pose, 
+        #          nu = np.zeros(6), 
+        #          nudot = np.zeros(6), 
+        #          added_masses = self.added_masses, 
+        #          viscous_drag = self.viscous_drag, 
+        #          quadratic_drag = self.quadratic_drag, 
+        #          inertia=self.inertia)
 
         # self.get_logger().info(f"{tau}")
 
-        #TODO MPC control
+        # MPC control
+        tau = np.zeros(2)
+
+        if self.mpc_path.poses: # Make sure the path is not empty
+
+            self.create_pose_marker(self.mpc_path.poses[0].pose) # Display the current desired pose
+
+            tau = MPC_solve(robot_mass = self.mass, 
+                iz = self.inertia[-1], 
+                horizon = self.mpc_horizon, 
+                time = self.mpc_time, 
+                Q_weight = np.diag([10, 10, 10, 1, 1]),
+                R_weight = np.diag([0.1, 0.1]),
+                lower_bound_u = np.array([-10.0, -2.0]),
+                upper_bound_u = np.array([10.0, 2.0]),
+                input_constraints = np.array([0, 1]),  # Which inputs are constrained
+                path = self.mpc_path
+                )
+
+        cylinder_l = 0.6
+        cylinder_r = 0.15
+
+        B = np.array([[1,1],
+                        [-cylinder_r,cylinder_r]])
+        u = np.linalg.inv(B) @ tau
 
         # give thruster forces and joint angles
-        self.rov.move([10,-10,0,0],
+        self.rov.move([u[0],u[1],0,0],
                       [0 for i in range(1,5)])
 
 

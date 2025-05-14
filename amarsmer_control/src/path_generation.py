@@ -28,6 +28,7 @@ class PathGeneration(Node):
         """
         Generate a helical pose for a given time t.
         """
+        t/= 10
         radius = 4.0        # meters
         depth_per_circle = 2.0  # meters
         num_turns = 3
@@ -35,16 +36,20 @@ class PathGeneration(Node):
 
         # Normalize t
         # t = (t / self.total_time) * total_length
-
+        """
         x = radius * np.cos(t)
         y = radius * np.sin(t)
-        z = -(depth_per_circle * t) / (2 * np.pi)
-        # z = 0
+        # z = -(depth_per_circle * t) / (2 * np.pi)
+        z = 0.1
 
         dx = -radius * np.sin(t)
         dy = radius * np.cos(t)
         yaw = np.arctan2(dy, dx)
-
+        """
+        x = 1.5*t
+        y = 2.0
+        z = -0.1
+        yaw = 0
         quat = R.from_euler('zyx', [yaw, 0, 0]).as_quat()
 
         pose = PoseStamped()

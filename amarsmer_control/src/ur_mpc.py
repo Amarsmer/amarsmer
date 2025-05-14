@@ -3,166 +3,149 @@
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
 import casadi as ca
 import numpy as np
+import math
 import matplotlib.pyplot as plt
 
+# Convert quaternion to yaw angle (psi) manually (no external libraries needed)
+def get_yaw_from_quaternion(q):
+    siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+    cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+    return math.atan2(siny_cosp, cosy_cosp)
+
 # Define the nonlinear underwater robot model
-def export_underwater_model(robot_mass = 10, 
-                            iz = 5, 
-                            ):
+def export_underwater_model(robot_mass=10, iz=5):
     model = AcadosModel()
     model.name = "ur_robot_model"
 
-    # Define symbolic states
-    x = ca.SX.sym('x')       # Position in x (inertial frame)
-    y = ca.SX.sym('y')       # Position in y (inertial frame)
-    psi = ca.SX.sym('psi')   # Yaw angle
-    u = ca.SX.sym('u')       # Surge velocity
-    r = ca.SX.sym('r')       # Yaw rate
-
+    # States
+    x = ca.SX.sym('x')
+    y = ca.SX.sym('y')
+    psi = ca.SX.sym('psi')
+    u = ca.SX.sym('u')
+    r = ca.SX.sym('r')
     states = ca.vertcat(x, y, psi, u, r)
 
-    # Define control inputs (thrusts)
-    tau_u = ca.SX.sym('tau_u')   # Surge thrust
-    tau_r = ca.SX.sym('tau_r')   # Yaw torque
-
+    # Controls
+    tau_u = ca.SX.sym('tau_u')
+    tau_r = ca.SX.sym('tau_r')
     controls = ca.vertcat(tau_u, tau_r)
 
-    # Define physical parameters
-    m = robot_mass    # mass of the robot
-    I_z = iz    # moment of inertia about the z-axis
+    # Dynamics
+    m = robot_mass
+    I_z = iz
 
-    # Define the nonlinear dynamics
-    x_dot = u * ca.cos(psi)      # Velocity in x
-    y_dot = u * ca.sin(psi)      # Velocity in y
-    psi_dot = r                  # Change in yaw
-    u_dot = tau_u / m            # Acceleration from surge thrust
-    r_dot = tau_r / I_z          # Angular acceleration from yaw torque
-
+    x_dot = u * ca.cos(psi)
+    y_dot = u * ca.sin(psi)
+    psi_dot = r
+    u_dot = tau_u / m
+    r_dot = tau_r / I_z
     xdot = ca.vertcat(x_dot, y_dot, psi_dot, u_dot, r_dot)
 
-    # Assign model to acados structure
     model.x = states
     model.u = controls
     model.f_expl_expr = xdot
-    model.f_impl_expr = states - xdot  # not used here but required
+    model.f_impl_expr = states - xdot
 
     return model
 
-# Main routine to set up and solve the MPC
-def MPC_solve(horizon = 20, 
-        time = 2, 
-        Q_weight = np.diag([10, 10, 10, 1, 1]),
-        R_weight = np.diag([0.1, 0.1]),
-        lower_bound_u = np.array([-5.0, -2.0]),
-        upper_bound_u = np.array([5.0, 2.0]),
-        input_constraints = np.array([0, 1])  # Which inputs are constrained):
-        ):
-    N_horizon = horizon   # Prediction steps
-    T = time          # Total prediction time [s]
+# Main MPC solver setup and run
+def MPC_solve(robot_mass=10, 
+              iz=5, 
+              horizon=20, 
+              time=2,
+              Q_weight=np.diag([10, 10, 10, 1, 1]),
+              R_weight=np.diag([0.1, 0.1]),
+              lower_bound_u=np.array([-5.0, -2.0]),
+              upper_bound_u=np.array([5.0, 2.0]),
+              input_constraints=np.array([0, 1]),
+              path=None):
+
+    N_horizon = horizon
+    T = time
     dt = T / N_horizon
 
-    # Load the model
-    model = export_underwater_model()
+    model = export_underwater_model(robot_mass, iz)
 
-    # Create OCP object
     ocp = AcadosOcp()
     ocp.model = model
     ocp.dims.N = N_horizon
 
-    nx = model.x.size()[0]  # Number of states
-    nu = model.u.size()[0]  # Number of control inputs
+    nx = model.x.size()[0]
+    nu = model.u.size()[0]
+    ny = nx + nu
 
-    # Define cost matrices
-    Q = Q_weight     # Weight on states
-    R = R_weight     # Weight on controls
+    Q = Q_weight
+    R = R_weight
 
-    # Cost function setup using least-squares structure
+    # Define yref mapping
     ocp.cost.cost_type = 'LINEAR_LS'
     ocp.cost.cost_type_e = 'LINEAR_LS'
-    ocp.cost.W = np.block([
-        [Q, np.zeros((nx, nu))],
-        [np.zeros((nu, nx)), R]
-    ])
+    ocp.cost.W = np.eye(ny)
+    ocp.cost.W[:nx, :nx] = Q
+    ocp.cost.W[nx:, nx:] = R
     ocp.cost.W_e = Q
 
-    # Cost function mapping matrices
-    ocp.cost.Vx = np.hstack([np.eye(nx), np.zeros((nx, nu))])
-    ocp.cost.Vu = np.hstack([np.zeros((nu, nx)), np.eye(nu)])
+    # Correct Vx and Vu dimension setup
+    ocp.cost.Vx = np.vstack([np.eye(nx), np.zeros((nu, nx))])  # (ny, nx)
+    ocp.cost.Vu = np.vstack([np.zeros((nx, nu)), np.eye(nu)])  # (ny, nu)
     ocp.cost.Vx_e = np.eye(nx)
 
-    # Reference values for tracking (target state and control)
-    x_ref = x_desired
-    u_ref = u_desired
-    ocp.cost.yref = np.concatenate((x_ref, u_ref))
-    ocp.cost.yref_e = x_ref
+    # Reference trajectory setup
+    x_refs = []
+    u_refs = []
 
-    # Define a circular trajectory as reference #TODO input mpc_generated states
-    # t_vals = np.linspace(0, T, N_horizon+1)
-    # radius = 5.0
-    # omega = 2 * np.pi / 10.0
-    # x_refs = np.array([
-    #     [radius * np.cos(omega * t),
-    #      radius * np.sin(omega * t),
-    #      omega * t,
-    #      1.0,  # Constant surge velocity
-    #      omega] for t in t_vals
-    # ])
-    u_refs = np.zeros((N_horizon, nu))  # assume zero desired thrust initially
+    poses = path.poses[:N_horizon+1]
+    if len(poses) < N_horizon + 1:
+        poses += [poses[-1]] * (N_horizon + 1 - len(poses))
 
-    # Terminal reference
-    ocp.cost.yref_e = x_refs[-1]
+    for i in range(N_horizon + 1):
+        pose = poses[i].pose
+        x = pose.position.x
+        y = pose.position.y
+        psi = get_yaw_from_quaternion(pose.orientation)
 
-    # Input constraints (thruster and torque limits)
+        if i > 0:
+            prev_pose = poses[i - 1].pose
+            dx = x - prev_pose.position.x
+            dy = y - prev_pose.position.y
+            u = math.hypot(dx, dy) / dt
+            psi_prev = get_yaw_from_quaternion(prev_pose.orientation)
+            r = (psi - psi_prev) / dt
+        else:
+            u = 0.0
+            r = 0.0
+
+        x_refs.append([x, y, psi, u, r])
+        if i < N_horizon:
+            u_refs.append([0.0, 0.0])
+
+    # Initial state and terminal cost
+    ocp.constraints.x0 = np.array(x_refs[0])
+    ocp.cost.yref = np.zeros(ny)  # default
+    ocp.cost.yref_e = np.array(x_refs[-1])
+
     ocp.constraints.lbu = lower_bound_u
     ocp.constraints.ubu = upper_bound_u
     ocp.constraints.idxbu = input_constraints
 
-    # Initial state
-    ocp.constraints.x0 = np.zeros(nx) 
-
-    # Solver settings
     ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
     ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
     ocp.solver_options.integrator_type = 'ERK'
     ocp.solver_options.nlp_solver_type = 'SQP_RTI'
     ocp.solver_options.tf = T
 
-    # Create solver instance
     solver = AcadosOcpSolver(ocp, json_file='acados_ocp.json')
 
-    # Set reference at each step
     for i in range(N_horizon):
-        solver.set(i, 'yref', np.concatenate((x_ref, u_ref)))
-    solver.set(N_horizon, 'yref', x_ref)
+        yref_i = np.concatenate((x_refs[i], u_refs[i]))
+        solver.set(i, 'yref', yref_i)
+    solver.set(N_horizon, 'yref', np.array(x_refs[-1]))
 
-    # Solve the problem
     status = solver.solve()
     if status != 0:
         print(f"Solver failed with status {status}")
 
-    # Extract solution (state and control trajectories)
     X = np.array([solver.get(i, 'x') for i in range(N_horizon + 1)])
     U = np.array([solver.get(i, 'u') for i in range(N_horizon)])
 
-    return U
-
-    # # Plot robot trajectory
-    # plt.figure()
-    # plt.plot(X[:,0], X[:,1], marker='o')
-    # plt.title("AUV Trajectory")
-    # plt.xlabel("x [m]")
-    # plt.ylabel("y [m]")
-    # plt.axis('equal')
-    # plt.grid()
-
-    # # Plot control inputs
-    # plt.figure()
-    # plt.plot(U)
-    # plt.title("Control Inputs (tau_u, tau_r)")
-    # plt.xlabel("Prediction Step")
-    # plt.legend(["tau_u", "tau_r"])
-    # plt.grid()
-    # plt.show()
-
-# if __name__ == "__main__":
-#     main()
+    return U[0]

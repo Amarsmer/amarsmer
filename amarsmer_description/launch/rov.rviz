@@ -29,6 +29,11 @@ Panels:
 Visualization Manager:
   Class: ""
   Displays:
+    - Name: PoseArrow
+      Class: rviz_default_plugins/Marker
+      Enabled: true
+      Topic: /pose_arrow
+      Queue Size: 10
     - Class: rviz_default_plugins/Path
       Name: Set Path
       Enabled: true
