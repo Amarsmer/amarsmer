@@ -33,11 +33,6 @@ class Controller(Node):
                                                   QoSProfile(depth=1,
                                                   durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
 
-        self.timer = self.create_timer(0.1, self.move)
-
-        # self.time_publisher = self.create_publisher(Float32, '/single_request', 10)
-        # self.horizon_publisher = self.create_publisher(Float32MultiArray, '/horizon_request', 10)
-        # self.pose_subscriber = self.create_subscription(PoseStamped, '/desired_pose', self.pose_callback, 10)
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
 
         # Create a client for path request
@@ -46,7 +41,9 @@ class Controller(Node):
         while not self.client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info("Waiting for service...")
         
-        self.future = None
+        self.future = None # Usef for client requests
+
+        self.timer = self.create_timer(0.1, self.move)
 
         ## Initiating variables
 
@@ -182,7 +179,7 @@ class Controller(Node):
                     result = self.future.result()
                     if result is not None:
                         self.mpc_path = result.path
-                        self.get_logger().info(f"Received path with {len(self.mpc_path.poses)} poses.")
+                        # self.get_logger().info(f"Received path with {len(self.mpc_path.poses)} poses.")
                     else:
                         self.get_logger().error("Service returned None.")
                 except Exception as e:

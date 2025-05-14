@@ -18,19 +18,11 @@ class PathGeneration(Node):
         super().__init__('path_generation')
 
         # Declare parameters
-        self.declare_parameter('display_log', True)
-
+        self.declare_parameter('display_log', False)
         self.display_log = self.get_parameter('display_log').value
 
         # Service
         self.path_service = self.create_service(RequestPath, '/path_request', self.generate_path)
-
-
-        ## Single_pose request, probably obsolete as publishing a single element array to the service will return a single pose TODO: test this and adjust
-        # Subscriber
-        # self.create_subscription(Float32, '/single_request', self.single_request, 10)
-        # Publishers
-        # self.pose_publisher = self.create_publisher(PoseStamped, 'desired_pose', 10)
 
     def single_pose(self, t: float) -> PoseStamped:
         """
