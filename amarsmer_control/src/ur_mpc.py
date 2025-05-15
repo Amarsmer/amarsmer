@@ -6,7 +6,7 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 
-# Convert quaternion to yaw angle (psi) manually (no external libraries needed)
+# Convert quaternion to yaw angle (psi) manually
 def get_yaw_from_quaternion(q):
     siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
     cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
@@ -41,6 +41,7 @@ def export_underwater_model(robot_mass=10, iz=5):
     r_dot = tau_r / I_z
     xdot = ca.vertcat(x_dot, y_dot, psi_dot, u_dot, r_dot)
 
+    # Assign to acados model
     model.x = states
     model.u = controls
     model.f_expl_expr = xdot
@@ -48,7 +49,7 @@ def export_underwater_model(robot_mass=10, iz=5):
 
     return model
 
-# Main MPC solver setup and run
+# Main MPC solver
 def MPC_solve(robot_mass=10, 
               iz=5, 
               horizon=20, 
@@ -58,22 +59,28 @@ def MPC_solve(robot_mass=10,
               lower_bound_u=np.array([-5.0, -2.0]),
               upper_bound_u=np.array([5.0, 2.0]),
               input_constraints=np.array([0, 1]),
-              path=None):
+              path=None,
+              x_current = None):
 
+    # Horizon and time parameters
     N_horizon = horizon
     T = time
     dt = T / N_horizon
 
+    # Load model
     model = export_underwater_model(robot_mass, iz)
 
+    # Acados OCP
     ocp = AcadosOcp()
     ocp.model = model
     ocp.dims.N = N_horizon
 
+    # Define size of states and controls
     nx = model.x.size()[0]
     nu = model.u.size()[0]
     ny = nx + nu
 
+    # Weight matrices
     Q = Q_weight
     R = R_weight
 
@@ -85,7 +92,7 @@ def MPC_solve(robot_mass=10,
     ocp.cost.W[nx:, nx:] = R
     ocp.cost.W_e = Q
 
-    # Correct Vx and Vu dimension setup
+    # Correct Vx and Vu dimension setup (y = [x; u])
     ocp.cost.Vx = np.vstack([np.eye(nx), np.zeros((nu, nx))])  # (ny, nx)
     ocp.cost.Vu = np.vstack([np.zeros((nx, nu)), np.eye(nu)])  # (ny, nu)
     ocp.cost.Vx_e = np.eye(nx)
@@ -103,31 +110,36 @@ def MPC_solve(robot_mass=10,
         x = pose.position.x
         y = pose.position.y
         psi = get_yaw_from_quaternion(pose.orientation)
+        psi = (psi + np.pi) % (2 * np.pi) - np.pi # Normalize
 
+        # Approximate velocity and yaw rate
         if i > 0:
             prev_pose = poses[i - 1].pose
             dx = x - prev_pose.position.x
             dy = y - prev_pose.position.y
             u = math.hypot(dx, dy) / dt
             psi_prev = get_yaw_from_quaternion(prev_pose.orientation)
-            r = (psi - psi_prev) / dt
+            dpsi = (psi - psi_prev + np.pi) % (2 * np.pi) - np.pi
+            r = dpsi / dt
         else:
             u = 0.0
             r = 0.0
 
         x_refs.append([x, y, psi, u, r])
         if i < N_horizon:
-            u_refs.append([0.0, 0.0])
+            u_refs.append([0.0, 0.0]) # Currently no feed forward. TODO: check if it would improve results
 
     # Initial state and terminal cost
-    ocp.constraints.x0 = np.array(x_refs[0])
+    ocp.constraints.x0 = np.array(x_current) # Initial robot pose
     ocp.cost.yref = np.zeros(ny)  # default
     ocp.cost.yref_e = np.array(x_refs[-1])
 
+    # Bounds
     ocp.constraints.lbu = lower_bound_u
     ocp.constraints.ubu = upper_bound_u
     ocp.constraints.idxbu = input_constraints
 
+    # Solver settings
     ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
     ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
     ocp.solver_options.integrator_type = 'ERK'
@@ -136,16 +148,19 @@ def MPC_solve(robot_mass=10,
 
     solver = AcadosOcpSolver(ocp, json_file='acados_ocp.json')
 
+    # Assign stage-wise tracking references
     for i in range(N_horizon):
         yref_i = np.concatenate((x_refs[i], u_refs[i]))
         solver.set(i, 'yref', yref_i)
     solver.set(N_horizon, 'yref', np.array(x_refs[-1]))
 
+    # Solve
     status = solver.solve()
     if status != 0:
         print(f"Solver failed with status {status}")
 
+    # Retrieve planned state and input trajectories
     X = np.array([solver.get(i, 'x') for i in range(N_horizon + 1)])
     U = np.array([solver.get(i, 'u') for i in range(N_horizon)])
 
-    return U[0]
+    return U[0] #Only the first input is considered at each iteration

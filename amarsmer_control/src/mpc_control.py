@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
 
+# rclpy
 from rclpy.node import Node, QoSProfile
 from rclpy.qos import QoSDurabilityPolicy
 import rclpy
+
+# Common python libraries
 import time
+import math
 import numpy as np
-from amarsmer_control import ROV
-from hydrodynamic_model import hydrodynamic
-from urdf_parser_py import urdf
+from scipy.spatial.transform import Rotation as R
+
+# ROS2 msg libraries
 from std_msgs.msg import String, Float32, Float32MultiArray
 from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import PoseStamped, Pose, Twist, Point, Quaternion, Vector3
-from scipy.spatial.transform import Rotation as R
-from amarsmer_interfaces.srv import RequestPath
-
-from ur_mpc import MPC_solve
 from visualization_msgs.msg import Marker
 
+# Custom libraries
+from urdf_parser_py import urdf
+from hydrodynamic_model import hydrodynamic
+from ur_mpc import MPC_solve
+from amarsmer_control import ROV
+from amarsmer_interfaces.srv import RequestPath
 
 class Controller(Node):
     def __init__(self):
@@ -44,29 +50,32 @@ class Controller(Node):
         while not self.client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info("Waiting for service...")
         
-        self.future = None # Usef for client requests
+        self.future = None # Used for client requests
 
         self.timer = self.create_timer(0.1, self.move)
 
         ## Initiating variables
 
         # Pose
-        self.desired_pose = None
         self.current_pose = None
         self.current_twist = None
 
         # Model
         self.mass = None
+        self.cylinder_l = None
+        self.cylinder_r = None
         self.added_masses = None
         self.viscous_drag = None
         self.quadratic_drag = None
 
         # MPC Parameters
-        self.mpc_horizon = 20
-        self.mpc_time = 2
+        self.mpc_horizon = 40
+        self.mpc_time = 3
         self.mpc_path = Path()
 
-
+        # Initialize monitoring values
+        self.monitoring = []
+        self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2','t'])
 
     def read_model(self, msg):
 
@@ -100,6 +109,7 @@ class Controller(Node):
                             Dq[i] = float(tag.text)
                         for tag in plugin.findall(f'{axis}Dot{force}'):
                             Ma[i] = float(tag.text)
+
         # print(Ma)
         # print(Dl)
         # print(Dq)
@@ -142,12 +152,6 @@ class Controller(Node):
 
         return [x,y,z,roll,pitch,yaw]
 
-    def pose_callback(self, msg: PoseStamped):
-        # Extract pose
-        msg_pose = msg.pose
-
-        self.desired_pose = self.pose_to_array(msg_pose)
-
     def odom_callback(self, msg: Odometry):
         # Extract pose
         msg_pose = msg.pose.pose
@@ -156,20 +160,20 @@ class Controller(Node):
 
         # Extract twist
         twist = msg.twist.twist
-        x = twist.linear.x
-        y = twist.linear.y
-        z = twist.linear.z
+        u = twist.linear.x
+        v = twist.linear.y
+        w = twist.linear.z
 
         p = twist.angular.x
         q = twist.angular.y
         r = twist.angular.z
         
-        self.current_twist = [x,y,z,p,q,r]
+        self.current_twist = [u,v,w,p,q,r]
 
         # self.get_logger().info(f"{self.pose}")
         # self.get_logger().info(f"{self.twist}")
 
-    def create_pose_marker(self, pose):
+    def create_pose_marker(self, inPose):
         marker = Marker()
         marker.header.frame_id = "world"
         marker.type = Marker.ARROW
@@ -181,7 +185,7 @@ class Controller(Node):
         marker.color.r = 0.0
         marker.color.g = 0.0
         marker.color.b = 1.0
-        marker.pose = pose  # your geometry_msgs/Pose
+        marker.pose = inPose
 
         marker.id = 0
         marker.lifetime.sec = 0  # persistent
@@ -216,7 +220,6 @@ class Controller(Node):
 
         self.future = self.client.call_async(request)
         
-
         # tau = hydrodynamic(rg = np.zeros(3), 
         #          rb = np.zeros(3), 
         #          eta = self.current_pose, 
@@ -232,32 +235,59 @@ class Controller(Node):
         # MPC control
         tau = np.zeros(2)
 
+        if self.current_pose is not None and self.current_twist is not None:
+            x_current = np.array([self.current_pose[0], # x
+                                  self.current_pose[1], # y
+                                  self.current_pose[5], # yaw
+                                  self.current_twist[0], # u
+                                  self.current_twist[5]]) # r
+
         if self.mpc_path.poses: # Make sure the path is not empty
 
-            self.create_pose_marker(self.mpc_path.poses[0].pose) # Display the current desired pose
+            desired_pose = self.mpc_path.poses[0].pose
+            self.create_pose_marker(desired_pose) # Display the current desired pose
 
             tau = MPC_solve(robot_mass = self.mass, 
                 iz = self.inertia[-1], 
                 horizon = self.mpc_horizon, 
                 time = self.mpc_time, 
-                Q_weight = np.diag([10, 10, 10, 1, 1]),
-                R_weight = np.diag([0.1, 0.1]),
-                lower_bound_u = np.array([-10.0, -2.0]),
-                upper_bound_u = np.array([10.0, 2.0]),
-                input_constraints = np.array([0, 1]),  # Which inputs are constrained
-                path = self.mpc_path
+                Q_weight = np.diag([10, 10, 10, 5, 20]),
+                R_weight = np.diag([0.1, 1.5]),
+                lower_bound_u = np.array([-40.0, -15.0]),
+                upper_bound_u = np.array([40.0, 15.0]),
+                input_constraints = np.array([0, 1]),  # Index of which inputs are constrained
+                path = self.mpc_path,
+                x_current = x_current
                 )
 
         cylinder_l = 0.6
         cylinder_r = 0.15
 
-        B = np.array([[1,1],
-                        [-cylinder_r,cylinder_r]])
+        # Define thrust allocation matrix and use it to apply tau on thrusters
+        B = np.array([[1        ,1],
+                     [cylinder_r,-cylinder_r]]) # Note that the current frame is NOT NED so the y and z axis are reversed
         u = np.linalg.inv(B) @ tau
 
         # give thruster forces and joint angles
         self.rov.move([u[0],u[1],0,0],
                       [0 for i in range(1,5)])
+
+        # Update and save monitoring metrics to be graphed later
+        if self.mpc_path.poses:
+            x_m = self.current_pose[0]
+            y_m = self.current_pose[1]
+            psi_m = self.current_pose[5]
+
+            x_d_m = desired_pose.position.x
+            y_d_m = desired_pose.position.y
+
+            q = desired_pose.orientation
+            siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+            cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+            psi_d_m = math.atan2(siny_cosp, cosy_cosp)
+
+            self.monitoring.append([x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t])
+            np.save('mpc_data', self.monitoring)
 
 
 rclpy.init()

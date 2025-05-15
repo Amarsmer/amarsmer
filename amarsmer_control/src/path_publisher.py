@@ -17,7 +17,7 @@ class PathPublisher(Node):
         super().__init__('path_publisher')
 
         # Declare parameters
-        self.declare_parameter('total_time', 30.0)
+        self.declare_parameter('total_time', 120.0)
         self.declare_parameter('dt', 0.1)
 
         self.total_time = self.get_parameter('total_time').value
