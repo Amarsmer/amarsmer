@@ -70,13 +70,15 @@ class Controller(Node):
         self.quadratic_drag = None
 
         # MPC Parameters
-        self.mpc_horizon = 5
-        self.mpc_time = 3
+        self.mpc_horizon = 1
+        self.mpc_time = 1.2
         self.mpc_path = Path()
 
         # Initialize monitoring values
         self.monitoring = []
         self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2','t'])
+
+        self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
 
     def read_model(self, msg):
 
@@ -288,7 +290,7 @@ class Controller(Node):
             psi_d_m = math.atan2(siny_cosp, cosy_cosp)
 
             self.monitoring.append([x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t])
-            title = str(date.today())+'_mpc_data'
+            title = self.date +'-mpc_data'
             np.save(title, self.monitoring)
 
 

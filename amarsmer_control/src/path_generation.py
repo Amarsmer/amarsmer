@@ -73,6 +73,7 @@ class PathGeneration(Node):
         yaw = np.arctan2(dy, dx)
         """
 
+        """
         # Square wave
         period = 0.01
         amplitude = 2.0
@@ -95,6 +96,54 @@ class PathGeneration(Node):
         dx = x_fwd - x
         dy = y_fwd - y
         yaw = math.atan2(dy, dx)
+        """
+
+        # Kinematic square wave
+
+        segment_length = 6.0
+        surge_speed = 0.4
+        z = 0.0
+        t *= 2
+        # Time per segment
+        segment_time = segment_length / surge_speed
+
+        # Determine which segment we're in
+        segment_index = int(t // segment_time)
+        t_in_segment = t % segment_time
+
+        # Directions: right, up, left, down (repeats every 4)
+        # directions = [
+        #     (1, 0),     # +X
+        #     (0, 1),     # +Y
+        #     (-1, 0),    # -X
+        #     (0, -1),    # -Y
+        # ]
+        directions = [
+            (1, 0),     # +X
+            (0, 1),     # +Y
+            (1, 0),    # -X
+            (0, -1),    # -Y
+        ]
+        yaws = [0, math.pi/2, 0, -math.pi/2]
+
+        # Get direction and yaw
+        dir_idx = segment_index % 4
+        dx, dy = directions[dir_idx]
+        yaw = yaws[dir_idx]
+
+        # Total completed segments
+        completed = segment_index
+
+        # Compute cumulative position
+        x, y = 0.0, 0.0
+        for i in range(completed):
+            dxi, dyi = directions[i % 4]
+            x += dxi * segment_length
+            y += dyi * segment_length
+
+        # Move along current segment
+        x += dx * surge_speed * t_in_segment
+        y += dy * surge_speed * t_in_segment
 
 
         # Create and return pose
