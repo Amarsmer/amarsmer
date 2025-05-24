@@ -8,6 +8,7 @@ from std_msgs.msg import Float32, Float32MultiArray
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from amarsmer_interfaces.srv import RequestPath
+import math
 
 """
 Creates a services that handle path generation requests. Receives a an array of time values and responds with the associated path.
@@ -47,17 +48,21 @@ class PathGeneration(Node):
         dy = radius * np.cos(t)
         yaw = np.arctan2(dy, dx)
         yaw = (yaw + np.pi) % (2 * np.pi) - np.pi # Normalize
+        """
         
+        """
         # Straight line
         x = 0.4*t
         y = 2.0
         z = 0.0
         yaw = 0
         """
+
+        """
         # Sin line
         a = 2
         f = 0.1
-        vx = 0.2
+        vx = 0.3
 
         x = vx*t
         y = 2.0 + a * np.sin(f*t)
@@ -66,8 +71,35 @@ class PathGeneration(Node):
         dx = vx
         dy = a * f * np.cos(f*t)
         yaw = np.arctan2(dy, dx)
+        """
 
-        quat = R.from_euler('zyx', [yaw, 0, 0]).as_quat()
+        # Square wave
+        period = 0.01
+        amplitude = 2.0
+        heading_dt = 0.01
+        t /= 2
+        def get_xy(s):
+            x = s
+            cycles = math.floor(s / 3)
+            y = 2.0 if cycles % 2 == 0 else -2.0
+            return x, y
+
+        # Current position
+        x, y = get_xy(t)
+        x = float(x)
+        y = float(y)
+        z = 0.0
+
+        # Compute heading using forward difference
+        x_fwd, y_fwd = get_xy(t + heading_dt)
+        dx = x_fwd - x
+        dy = y_fwd - y
+        yaw = math.atan2(dy, dx)
+
+
+        # Create and return pose
+
+        quat = R.from_euler('zyx', [yaw, 0.0, 0.0]).as_quat()
 
         pose = PoseStamped()
         pose.header.frame_id = "world"

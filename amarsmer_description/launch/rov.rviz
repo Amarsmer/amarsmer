@@ -40,7 +40,7 @@ Visualization Manager:
       Topic: /set_path
       Alpha: 1.0
       Buffer Length: 1000
-      Color: 255; 0; 0  # Red
+      Color: 0; 29; 188 
       Line Style: Lines
       Line Width: 0.1
       Value: true
@@ -257,7 +257,7 @@ Visualization Manager:
       Value: true
   Enabled: true
   Global Options:
-    Background Color: 0; 0; 0
+    Background Color: 255; 255; 255
     Fixed Frame: world
     Frame Rate: 30
   Name: root

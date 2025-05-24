@@ -10,6 +10,7 @@ import time
 import math
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+from datetime import datetime
 
 # ROS2 msg libraries
 from std_msgs.msg import String, Float32, Float32MultiArray
@@ -69,7 +70,7 @@ class Controller(Node):
         self.quadratic_drag = None
 
         # MPC Parameters
-        self.mpc_horizon = 40
+        self.mpc_horizon = 5
         self.mpc_time = 3
         self.mpc_path = Path()
 
@@ -251,8 +252,8 @@ class Controller(Node):
                 iz = self.inertia[-1], 
                 horizon = self.mpc_horizon, 
                 time = self.mpc_time, 
-                Q_weight = np.diag([10, 10, 10, 5, 20]),
-                R_weight = np.diag([0.1, 1.5]),
+                Q_weight = np.diag([50, 50, 50, 10, 20]),
+                R_weight = np.diag([0.05, 1.0]),
                 lower_bound_u = np.array([-40.0, -15.0]),
                 upper_bound_u = np.array([40.0, 15.0]),
                 input_constraints = np.array([0, 1]),  # Index of which inputs are constrained
@@ -287,7 +288,8 @@ class Controller(Node):
             psi_d_m = math.atan2(siny_cosp, cosy_cosp)
 
             self.monitoring.append([x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t])
-            np.save('mpc_data', self.monitoring)
+            title = str(date.today())+'_mpc_data'
+            np.save(title, self.monitoring)
 
 
 rclpy.init()
