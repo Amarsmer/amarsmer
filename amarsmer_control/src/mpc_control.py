@@ -21,7 +21,7 @@ from visualization_msgs.msg import Marker
 # Custom libraries
 from urdf_parser_py import urdf
 from hydrodynamic_model import hydrodynamic
-from ur_mpc import MPC_solve
+import ur_mpc
 from amarsmer_control import ROV
 from amarsmer_interfaces.srv import RequestPath
 
@@ -73,6 +73,15 @@ class Controller(Node):
         self.mpc_horizon = 1
         self.mpc_time = 1.2
         self.mpc_path = Path()
+        self.input_bounds = {"lower": np.array([-40.0, -15.0]),
+                             "upper": np.array([40.0, 15.0]),
+                             "idx":   np.array([0, 1])
+                             }
+        self.Q_weight = np.diag([50, 50, 50, 10, 20])
+        self.R_weight = np.diag([0.05, 1.0])
+
+        # Initialize MPC solver
+        self.controller = None #Updated at the start of spin
 
         # Initialize monitoring values
         self.monitoring = []
@@ -199,6 +208,15 @@ class Controller(Node):
         if not self.rov.ready() or self.robot is None:
             return
 
+        if self.controller is None:
+            self.controller = ur_mpc.MPCController(iz = self.inertia[-1], 
+                                            horizon = self.mpc_horizon, 
+                                            time = self.mpc_time, 
+                                            Q_weight = self.Q_weight,
+                                            R_weight = self.R_weight,
+                                            input_bounds = self.input_bounds
+                                            )
+
         t = self.get_time()
 
         # Check if previous future is still pending
@@ -245,23 +263,27 @@ class Controller(Node):
                                   self.current_twist[0], # u
                                   self.current_twist[5]]) # r
 
+        x_current = np.array(x_current).reshape(-1)
+
+
         if self.mpc_path.poses: # Make sure the path is not empty
 
             desired_pose = self.mpc_path.poses[0].pose
             self.create_pose_marker(desired_pose) # Display the current desired pose
 
-            tau = MPC_solve(robot_mass = self.mass, 
-                iz = self.inertia[-1], 
-                horizon = self.mpc_horizon, 
-                time = self.mpc_time, 
-                Q_weight = np.diag([50, 50, 50, 10, 20]),
-                R_weight = np.diag([0.05, 1.0]),
-                lower_bound_u = np.array([-40.0, -15.0]),
-                upper_bound_u = np.array([40.0, 15.0]),
-                input_constraints = np.array([0, 1]),  # Index of which inputs are constrained
-                path = self.mpc_path,
-                x_current = x_current
-                )
+            # tau = MPC_solve(robot_mass = self.mass, 
+            #     iz = self.inertia[-1], 
+            #     horizon = self.mpc_horizon, 
+            #     time = self.mpc_time, 
+            #     Q_weight = np.diag([50, 50, 50, 10, 20]),
+            #     R_weight = np.diag([0.05, 1.0]),
+            #     lower_bound_u = np.array([-40.0, -15.0]),
+            #     upper_bound_u = np.array([40.0, 15.0]),
+            #     input_constraints = np.array([0, 1]),  # Index of which inputs are constrained
+            #     path = self.mpc_path,
+            #     x_current = x_current
+            #     )
+            tau = self.controller.solve(path=self.mpc_path, x_current=x_current)
 
         cylinder_l = 0.6
         cylinder_r = 0.15

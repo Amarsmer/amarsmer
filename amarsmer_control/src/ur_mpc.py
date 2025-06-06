@@ -1,18 +1,15 @@
-#!/usr/bin/env python3
-
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
 import casadi as ca
 import numpy as np
 import math
-import matplotlib.pyplot as plt
 
-# Convert quaternion to yaw angle (psi) manually
+# Utility to convert quaternion to yaw
 def get_yaw_from_quaternion(q):
     siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
     cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
     return math.atan2(siny_cosp, cosy_cosp)
 
-# Define the nonlinear underwater robot model
+# Model export
 def export_underwater_model(robot_mass=10, iz=5):
     model = AcadosModel()
     model.name = "ur_robot_model"
@@ -25,23 +22,19 @@ def export_underwater_model(robot_mass=10, iz=5):
     r = ca.SX.sym('r')
     states = ca.vertcat(x, y, psi, u, r)
 
-    # Controls
+    # Controls (can be expanded)
     tau_u = ca.SX.sym('tau_u')
     tau_r = ca.SX.sym('tau_r')
     controls = ca.vertcat(tau_u, tau_r)
 
     # Dynamics
-    m = robot_mass
-    I_z = iz
-
     x_dot = u * ca.cos(psi)
     y_dot = u * ca.sin(psi)
     psi_dot = r
-    u_dot = tau_u / m
-    r_dot = tau_r / I_z
+    u_dot = tau_u / robot_mass
+    r_dot = tau_r / iz
     xdot = ca.vertcat(x_dot, y_dot, psi_dot, u_dot, r_dot)
 
-    # Assign to acados model
     model.x = states
     model.u = controls
     model.f_expl_expr = xdot
@@ -49,118 +42,119 @@ def export_underwater_model(robot_mass=10, iz=5):
 
     return model
 
-# Main MPC solver
-def MPC_solve(robot_mass=10, 
-              iz=5, 
-              horizon=20, 
-              time=2,
-              Q_weight=np.diag([10, 10, 10, 1, 1]),
-              R_weight=np.diag([0.1, 0.1]),
-              lower_bound_u=np.array([-5.0, -2.0]),
-              upper_bound_u=np.array([5.0, 2.0]),
-              input_constraints=np.array([0, 1]),
-              path=None,
-              x_current = None):
+class MPCController:
+    def __init__(self, robot_mass=10, iz=5, horizon=20, time=2.0,
+                 Q_weight=None, R_weight=None, input_bounds=None):
+        self.mass = robot_mass
+        self.iz = iz
+        self.N = horizon
+        self.T = time
+        self.dt = time / horizon
 
-    # Horizon and time parameters
-    N_horizon = horizon
-    T = time
-    dt = T / N_horizon
+        self.Q = Q_weight if Q_weight is not None else np.diag([10, 10, 10, 1, 1])
+        self.R = R_weight if R_weight is not None else np.diag([0.1, 0.1])
+        self.input_bounds = input_bounds if input_bounds is not None else {
+            "lower": np.array([-5.0, -2.0]),
+            "upper": np.array([5.0, 2.0]),
+            "idx": np.array([0, 1])
+        }
 
-    # Load model
-    model = export_underwater_model(robot_mass, iz)
+        self.model = export_underwater_model(robot_mass, iz)
+        self.ocp = self._build_ocp()
+        self.solver = AcadosOcpSolver(self.ocp, json_file='acados_ocp.json')
 
-    # Acados OCP
-    ocp = AcadosOcp()
-    ocp.model = model
-    ocp.dims.N = N_horizon
+    def _build_ocp(self):
+        model = self.model
+        ocp = AcadosOcp()
+        ocp.model = model
+        ocp.dims.N = self.N
 
-    # Define size of states and controls
-    nx = model.x.size()[0]
-    nu = model.u.size()[0]
-    ny = nx + nu
+        nx = model.x.size()[0]
+        nu = model.u.size()[0]
+        ny = nx + nu
 
-    # Weight matrices
-    Q = Q_weight
-    R = R_weight
+        # Cost setup
+        ocp.cost.cost_type = 'LINEAR_LS'
+        ocp.cost.cost_type_e = 'LINEAR_LS'
+        ocp.cost.W = np.eye(ny)
+        ocp.cost.W[:nx, :nx] = self.Q
+        ocp.cost.W[nx:, nx:] = self.R
+        ocp.cost.W_e = self.Q
+        ocp.constraints.x0 = np.zeros(5)
+        ocp.cost.yref = np.zeros(ny)
+        ocp.cost.yref_e = np.zeros(nx)
 
-    # Define yref mapping
-    ocp.cost.cost_type = 'LINEAR_LS'
-    ocp.cost.cost_type_e = 'LINEAR_LS'
-    ocp.cost.W = np.eye(ny)
-    ocp.cost.W[:nx, :nx] = Q
-    ocp.cost.W[nx:, nx:] = R
-    ocp.cost.W_e = Q
+        ocp.cost.Vx = np.vstack([np.eye(nx), np.zeros((nu, nx))])
+        ocp.cost.Vu = np.vstack([np.zeros((nx, nu)), np.eye(nu)])
+        ocp.cost.Vx_e = np.eye(nx)
 
-    # Correct Vx and Vu dimension setup (y = [x; u])
-    ocp.cost.Vx = np.vstack([np.eye(nx), np.zeros((nu, nx))])  # (ny, nx)
-    ocp.cost.Vu = np.vstack([np.zeros((nx, nu)), np.eye(nu)])  # (ny, nu)
-    ocp.cost.Vx_e = np.eye(nx)
+        # Input constraints
+        ocp.constraints.lbu = self.input_bounds["lower"]
+        ocp.constraints.ubu = self.input_bounds["upper"]
+        ocp.constraints.idxbu = self.input_bounds["idx"]
 
-    # Reference trajectory setup
-    x_refs = []
-    u_refs = []
+        # State constraints (enable x0 via lbx/ubx)
+        ocp.constraints.idxbx = np.arange(nx)
+        ocp.constraints.lbx = -1e10 * np.ones(nx)
+        ocp.constraints.ubx =  1e10 * np.ones(nx)
 
-    poses = path.poses[:N_horizon+1]
-    if len(poses) < N_horizon + 1:
-        poses += [poses[-1]] * (N_horizon + 1 - len(poses))
+        # Solver setup
+        ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
+        ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
+        ocp.solver_options.integrator_type = 'ERK'
+        ocp.solver_options.nlp_solver_type = 'SQP_RTI'
+        ocp.solver_options.tf = self.T
 
-    for i in range(N_horizon + 1):
-        pose = poses[i].pose
-        x = pose.position.x
-        y = pose.position.y
-        psi = get_yaw_from_quaternion(pose.orientation)
-        psi = (psi + np.pi) % (2 * np.pi) - np.pi # Normalize
+        return ocp
 
-        # Approximate velocity and yaw rate
-        if i > 0:
-            prev_pose = poses[i - 1].pose
-            dx = x - prev_pose.position.x
-            dy = y - prev_pose.position.y
-            u = math.hypot(dx, dy) / dt
-            psi_prev = get_yaw_from_quaternion(prev_pose.orientation)
-            dpsi = (psi - psi_prev + np.pi) % (2 * np.pi) - np.pi
-            r = dpsi / dt
-        else:
-            u = 0.0
-            r = 0.0
+    def update_weights(self, Q_weight=None, R_weight=None):
+        if Q_weight is not None:
+            self.Q = Q_weight
+        if R_weight is not None:
+            self.R = R_weight
 
-        x_refs.append([x, y, psi, u, r])
-        if i < N_horizon:
-            u_refs.append([0.0, 0.0]) # Currently no feed forward. TODO: check if it would improve results
+        # Rebuild OCP and solver
+        self.ocp = self._build_ocp()
+        self.solver = AcadosOcpSolver(self.ocp, json_file='acados_ocp.json')
 
-    # Initial state and terminal cost
-    ocp.constraints.x0 = np.array(x_current) # Initial robot pose
-    ocp.cost.yref = np.zeros(ny)  # default
-    ocp.cost.yref_e = np.array(x_refs[-1])
+    def solve(self, path, x_current):
+        poses = path.poses[:self.N + 1]
+        if len(poses) < self.N + 1:
+            poses += [poses[-1]] * (self.N + 1 - len(poses))
 
-    # Bounds
-    ocp.constraints.lbu = lower_bound_u
-    ocp.constraints.ubu = upper_bound_u
-    ocp.constraints.idxbu = input_constraints
+        x_refs, u_refs = [], []
+        for i in range(self.N + 1):
+            pose = poses[i].pose
+            x = pose.position.x
+            y = pose.position.y
+            psi = get_yaw_from_quaternion(pose.orientation)
+            psi = (psi + np.pi) % (2 * np.pi) - np.pi
 
-    # Solver settings
-    ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
-    ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
-    ocp.solver_options.integrator_type = 'ERK'
-    ocp.solver_options.nlp_solver_type = 'SQP_RTI'
-    ocp.solver_options.tf = T
+            if i > 0:
+                prev_pose = poses[i - 1].pose
+                dx = x - prev_pose.position.x
+                dy = y - prev_pose.position.y
+                u = math.hypot(dx, dy) / self.dt
+                psi_prev = get_yaw_from_quaternion(prev_pose.orientation)
+                dpsi = (psi - psi_prev + np.pi) % (2 * np.pi) - np.pi
+                r = dpsi / self.dt
+            else:
+                u, r = 0.0, 0.0
 
-    solver = AcadosOcpSolver(ocp, json_file='acados_ocp.json')
+            x_refs.append([x, y, psi, u, r])
+            if i < self.N:
+                u_refs.append([0.0, 0.0])
 
-    # Assign stage-wise tracking references
-    for i in range(N_horizon):
-        yref_i = np.concatenate((x_refs[i], u_refs[i]))
-        solver.set(i, 'yref', yref_i)
-    solver.set(N_horizon, 'yref', np.array(x_refs[-1]))
+        self.solver.set(0, 'lbx', x_current)
+        self.solver.set(0, 'ubx', x_current)
+        for i in range(self.N):
+            yref = np.concatenate((x_refs[i], u_refs[i]))
+            self.solver.set(i, 'yref', yref)
+        self.solver.set(self.N, 'yref', np.array(x_refs[-1]))
 
-    # Solve
-    status = solver.solve()
-    if status != 0:
-        print(f"Solver failed with status {status}")
+        status = self.solver.solve()
+        if status != 0:
+            print(f"ACADOS solver failed with status {status}")
 
-    # Retrieve planned state and input trajectories
-    X = np.array([solver.get(i, 'x') for i in range(N_horizon + 1)])
-    U = np.array([solver.get(i, 'u') for i in range(N_horizon)])
-
-    return U[0] #Only the first input is considered at each iteration
+        U = np.array([self.solver.get(i, 'u') for i in range(self.N)])
+        return U[0]
