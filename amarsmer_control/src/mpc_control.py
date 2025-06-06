@@ -30,11 +30,15 @@ class Controller(Node):
 
         super().__init__('mpc_control', namespace='amarsmer')
 
+        ######### Robot #########
+
         thrusters = [f'thruster{i}' for i in range(1,5)]
         joints = [f'thruster{i}_steering' for i in range(1,5)]
         self.rov = ROV(self, thrusters, joints, thrust_visual = True)
 
         self.robot = None
+
+        ######### ROS Interactions #########
 
         # Publisher and subscribers
         self.robot_sub = self.create_subscription(String, 'robot_description',
@@ -53,15 +57,15 @@ class Controller(Node):
         
         self.future = None # Used for client requests
 
-        self.timer = self.create_timer(0.1, self.move)
+        self.timer = self.create_timer(0.001, self.move)
 
-        ## Initiating variables
+        ######### Initiating variables #########
 
         # Pose
         self.current_pose = None
         self.current_twist = None
 
-        # Model
+        # Model # Updated in read_model
         self.mass = None
         self.cylinder_l = None
         self.cylinder_r = None
@@ -73,21 +77,26 @@ class Controller(Node):
         self.mpc_horizon = 1
         self.mpc_time = 1.2
         self.mpc_path = Path()
-        self.input_bounds = {"lower": np.array([-40.0, -15.0]),
-                             "upper": np.array([40.0, 15.0]),
-                             "idx":   np.array([0, 1])
+        self.input_bounds = {"lower": np.array([-40.0, -15.0]), # minimal force and torque
+                             "upper": np.array([40.0, 15.0]), # maximal force and torque
+                             "idx":   np.array([0, 1]) # index of the constrained inputs
                              }
         self.Q_weight = np.diag([50, 50, 50, 10, 20])
         self.R_weight = np.diag([0.05, 1.0])
 
         # Initialize MPC solver
-        self.controller = None #Updated at the start of spin
+        self.controller = None
 
         # Initialize monitoring values
         self.monitoring = []
         self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2','t'])
 
         self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
+
+    def __del__(self):
+        self.get_logger().info("Saving monitoring data")
+        title = self.date +'-mpc_data'
+        np.save(title, self.monitoring)
 
     def read_model(self, msg):
 
@@ -121,10 +130,6 @@ class Controller(Node):
                             Dq[i] = float(tag.text)
                         for tag in plugin.findall(f'{axis}Dot{force}'):
                             Ma[i] = float(tag.text)
-
-        # print(Ma)
-        # print(Dl)
-        # print(Dq)
 
         # Update robot's model for hydrodynamic computation
         self.mass = l1.inertial.mass
@@ -182,9 +187,6 @@ class Controller(Node):
         
         self.current_twist = [u,v,w,p,q,r]
 
-        # self.get_logger().info(f"{self.pose}")
-        # self.get_logger().info(f"{self.twist}")
-
     def create_pose_marker(self, inPose):
         marker = Marker()
         marker.header.frame_id = "world"
@@ -219,6 +221,8 @@ class Controller(Node):
 
         t = self.get_time()
 
+        ######### Path request #########
+
         # Check if previous future is still pending
         if self.future is not None:
             if self.future.done():
@@ -240,22 +244,13 @@ class Controller(Node):
         request.path_request.data = np.linspace(t, t + self.mpc_time, int(self.mpc_horizon) + 1, dtype=float)
 
         self.future = self.client.call_async(request)
-        
-        # tau = hydrodynamic(rg = np.zeros(3), 
-        #          rb = np.zeros(3), 
-        #          eta = self.current_pose, 
-        #          nu = np.zeros(6), 
-        #          nudot = np.zeros(6), 
-        #          added_masses = self.added_masses, 
-        #          viscous_drag = self.viscous_drag, 
-        #          quadratic_drag = self.quadratic_drag, 
-        #          inertia=self.inertia)
 
-        # self.get_logger().info(f"{tau}")
+        ######### MPC control #########
 
-        # MPC control
+        # Initialize mpc output
         tau = np.zeros(2)
 
+        # Update pose for mpc input
         if self.current_pose is not None and self.current_twist is not None:
             x_current = np.array([self.current_pose[0], # x
                                   self.current_pose[1], # y
@@ -263,27 +258,15 @@ class Controller(Node):
                                   self.current_twist[0], # u
                                   self.current_twist[5]]) # r
 
-        x_current = np.array(x_current).reshape(-1)
-
-
+        # Solve MPC
         if self.mpc_path.poses: # Make sure the path is not empty
 
             desired_pose = self.mpc_path.poses[0].pose
             self.create_pose_marker(desired_pose) # Display the current desired pose
 
-            # tau = MPC_solve(robot_mass = self.mass, 
-            #     iz = self.inertia[-1], 
-            #     horizon = self.mpc_horizon, 
-            #     time = self.mpc_time, 
-            #     Q_weight = np.diag([50, 50, 50, 10, 20]),
-            #     R_weight = np.diag([0.05, 1.0]),
-            #     lower_bound_u = np.array([-40.0, -15.0]),
-            #     upper_bound_u = np.array([40.0, 15.0]),
-            #     input_constraints = np.array([0, 1]),  # Index of which inputs are constrained
-            #     path = self.mpc_path,
-            #     x_current = x_current
-            #     )
             tau = self.controller.solve(path=self.mpc_path, x_current=x_current)
+
+        ######### Robot Control #########
 
         cylinder_l = 0.6
         cylinder_r = 0.15
@@ -297,6 +280,8 @@ class Controller(Node):
         self.rov.move([u[0],u[1],0,0],
                       [0 for i in range(1,5)])
 
+        
+        # TODO: Implement the new monitoring code
         # Update and save monitoring metrics to be graphed later
         if self.mpc_path.poses:
             x_m = self.current_pose[0]
@@ -312,12 +297,20 @@ class Controller(Node):
             psi_d_m = math.atan2(siny_cosp, cosy_cosp)
 
             self.monitoring.append([x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t])
-            title = self.date +'-mpc_data'
-            np.save(title, self.monitoring)
+            
+        
 
+if __name__ == '__main__':
 
-rclpy.init()
-node = Controller()
-rclpy.spin(node)
-node.destroy_node()
-rclpy.shutdown()
+    rclpy.init()
+    node = Controller()
+
+    try:
+        rclpy.spin(node)
+
+    except KeyboardInterrupt:
+        print("Ctrl-C received")
+
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
