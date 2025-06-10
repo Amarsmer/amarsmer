@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
 # rclpy
-from rclpy.node import Node, QoSProfile
-from rclpy.qos import QoSDurabilityPolicy
 import rclpy
 
 # Common python libraries
@@ -32,20 +30,11 @@ class Controller(Node):
 
         ######### Robot #########
 
-        thrusters = [f'thruster{i}' for i in range(1,5)]
-        joints = [f'thruster{i}_steering' for i in range(1,5)]
-        self.rov = ROV(self, thrusters, joints, thrust_visual = True)
-
-        self.robot = None
+        self.rov = ROV(self, thrust_visual = True)
 
         ######### ROS Interactions #########
 
         # Publisher and subscribers
-        self.robot_sub = self.create_subscription(String, 'robot_description',
-                                                  self.read_model,
-                                                  QoSProfile(depth=1,
-                                                  durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
-
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
         self.pose_arrow_publisher = self.create_publisher(Marker, "/pose_arrow", 10)
 
@@ -64,14 +53,6 @@ class Controller(Node):
         # Pose
         self.current_pose = None
         self.current_twist = None
-
-        # Model # Updated in read_model
-        self.mass = None
-        self.cylinder_l = None
-        self.cylinder_r = None
-        self.added_masses = None
-        self.viscous_drag = None
-        self.quadratic_drag = None
 
         # MPC Parameters
         self.mpc_horizon = 1
@@ -97,55 +78,6 @@ class Controller(Node):
         self.get_logger().info("Saving monitoring data")
         title = self.date +'-mpc_data'
         np.save(title, self.monitoring)
-
-    def read_model(self, msg):
-
-        self.robot = urdf.Robot.from_xml_string(msg.data)
-
-        print(len(self.robot.joints), 'joints')
-        print(len(self.robot.links), 'links')
-
-
-        for j in self.robot.joints:
-            if j.type == 'continuous':
-                print('found thruster', j.name)
-
-        l1 = self.robot.links[0]
-        # print('mass:',l1.inertial.mass)
-        # print('rg:', l1.inertial.origin)
-        # print('inertia:', l1.inertial.inertia)
-
-        # Read the robot's dynamic parameters
-        Ma = [0]*6
-        Dl = [0]*6
-        Dq = [0]*6
-
-        for gz in self.robot.gazebos:
-            for plugin in gz.findall('plugin'):
-                if 'Hydrodynamics' in plugin.get('name'):
-                    for i,(axis,force) in enumerate(('xU','yV','zW', 'kP', 'mQ', 'nR')):
-                        for tag in plugin.findall(axis+force):
-                            Dl[i] = float(tag.text)
-                        for tag in plugin.findall(f'{axis}{force}abs{force}'):
-                            Dq[i] = float(tag.text)
-                        for tag in plugin.findall(f'{axis}Dot{force}'):
-                            Ma[i] = float(tag.text)
-
-        # Update robot's model for hydrodynamic computation
-        self.mass = l1.inertial.mass
-        self.added_masses = Ma
-        self.viscous_drag = Dl
-        self.quadratic_drag = Dq
-
-        read_inertia = l1.inertial.inertia
-        self.inertia = [
-            read_inertia.ixx,
-            read_inertia.ixy,
-            read_inertia.ixz,
-            read_inertia.iyy,
-            read_inertia.iyz,
-            read_inertia.izz
-        ]
 
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
@@ -207,17 +139,20 @@ class Controller(Node):
         self.pose_arrow_publisher.publish(marker)
 
     def move(self):
-        if not self.rov.ready() or self.robot is None:
+        if not self.rov.parsed():
             return
 
         if self.controller is None:
-            self.controller = ur_mpc.MPCController(iz = self.inertia[-1], 
+            self.controller = ur_mpc.MPCController(iz = self.rov.inertia[-1],
                                             horizon = self.mpc_horizon, 
                                             time = self.mpc_time, 
                                             Q_weight = self.Q_weight,
                                             R_weight = self.R_weight,
                                             input_bounds = self.input_bounds
                                             )
+
+        if not self.rov.ready():
+            return
 
         t = self.get_time()
 
@@ -272,7 +207,7 @@ class Controller(Node):
         cylinder_r = 0.15
 
         # Define thrust allocation matrix and use it to apply tau on thrusters
-        B = np.array([[1        ,1],
+        B = np.array([[1 ,1],
                      [cylinder_r,-cylinder_r]]) # Note that the current frame is NOT NED so the y and z axis are reversed
         u = np.linalg.inv(B) @ tau
 
