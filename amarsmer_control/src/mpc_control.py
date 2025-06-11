@@ -2,6 +2,7 @@
 
 # rclpy
 import rclpy
+from rclpy.node import Node
 
 # Common python libraries
 import time
