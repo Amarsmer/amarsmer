@@ -46,7 +46,7 @@ class ROV:
         self.joints = []
 
     def parsed(self):
-        return self.thruster_pub is not None
+        return self.thruster_pub
 
     def ready(self):
         return self.p is not None
