@@ -20,7 +20,7 @@ from visualization_msgs.msg import Marker
 # Custom libraries
 from urdf_parser_py import urdf
 from hydrodynamic_model import hydrodynamic
-import ur_mpc
+import full_mpc as mpc
 from amarsmer_control import ROV
 from amarsmer_interfaces.srv import RequestPath
 
@@ -144,7 +144,13 @@ class Controller(Node):
             return
 
         if self.controller is None:
-            self.controller = ur_mpc.MPCController(iz = self.rov.inertia[-1],
+            self.controller = mpc.MPCController(robot_mass = self.rov.mass,
+                                            inertia = self.rov.inertia,
+                                            rg = self.rov.rg,
+                                            rb = self.rov.rb,
+                                            added_masses = self.rov.added_masses,
+                                            viscous_drag = self.rov.viscous_drag,
+                                            quadratic_drag = self.rov.quadratic_drag,
                                             horizon = self.mpc_horizon, 
                                             time = self.mpc_time, 
                                             Q_weight = self.Q_weight,
@@ -204,16 +210,19 @@ class Controller(Node):
 
         ######### Robot Control #########
 
-        cylinder_l = 0.6
-        cylinder_r = 0.15
+        # cylinder_l = 0.6
+        # cylinder_r = 0.15
 
         # Define thrust allocation matrix and use it to apply tau on thrusters
+        """
         B = np.array([[1 ,1],
                      [cylinder_r,-cylinder_r]]) # Note that the current frame is NOT NED so the y and z axis are reversed
         u = np.linalg.inv(B) @ tau
+        """
+        u = np.linalg.inv(self.rov.TAM) @ tau
 
         # give thruster forces and joint angles
-        self.rov.move([u[0],u[1],0,0],
+        self.rov.move([u[0],u[1],u[2],u[3]],
                       [0 for i in range(1,5)])
 
         

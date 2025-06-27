@@ -16,6 +16,8 @@ install(PROGRAMS src/mpc_control.py
 
 install(PROGRAMS src/ur_mpc.py
         DESTINATION lib/${PROJECT_NAME})
+        install(PROGRAMS src/full_mpc.py
+        DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS src/pose_to_rpy.py
         DESTINATION lib/${PROJECT_NAME})

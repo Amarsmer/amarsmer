@@ -29,7 +29,7 @@ class ROV:
                                                 self.read_model,
                                                 QoSProfile(depth=1,
                                                 durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
-        robot_sub
+        # robot_sub
 
         # state feedback
         self.p = None
@@ -40,13 +40,25 @@ class ROV:
         self.odom_sub = node.create_subscription(Odometry, 'odom', self.odom_cb, 1)
         self.js_sub = node.create_subscription(JointState, 'joint_states', self.joint_cb, 1)
 
+        # Initialize attributes
+
         self.thruster_pub = []
         self.wrench_pub = []
         self.joint_pub = []
         self.joints = []
 
+        self.mass = None
+        self.added_masses = None
+        self.viscous_drag = None
+        self.quadratic_drag = None
+
+        self.rg = None
+        self.rb = None
+
+        self.inertia = None
+
     def parsed(self):
-        return self.thruster_pub is not None
+        return self.thruster_pub is not None and self.inertia is not None
 
     def ready(self):
         return self.p is not None
@@ -103,7 +115,7 @@ class ROV:
         thrusters.sort()
         for thr in thrusters:
             self.thruster_pub.append(self.node.create_publisher(Float64, 'cmd_'+thr, 1))
-            # Wrench publishers, used to display thrust
+            # Wrench publishers, used to display thrustass,
             self.wrench_pub.append(self.node.create_publisher(WrenchStamped, 'amarsmer_' + thr + '_wrench', 1))
 
         print('Thrusters:', thrusters)
@@ -135,6 +147,9 @@ class ROV:
         self.added_masses = Ma
         self.viscous_drag = Dl
         self.quadratic_drag = Dq
+
+        self.rg = base_link.inertial.origin.xyz
+        self.rb = base_link.collision.origin.xyz
 
         read_inertia = base_link.inertial.inertia
         self.inertia = [
