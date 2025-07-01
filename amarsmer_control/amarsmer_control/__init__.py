@@ -58,7 +58,7 @@ class ROV:
         self.inertia = None
 
     def parsed(self):
-        return self.thruster_pub is not None and self.inertia is not None
+        return self.thruster_pub
 
     def ready(self):
         return self.p is not None
