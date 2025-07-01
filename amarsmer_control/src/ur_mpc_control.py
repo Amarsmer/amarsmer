@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 # rclpy
+from rclpy.node import Node, QoSProfile
+from rclpy.qos import QoSDurabilityPolicy
 import rclpy
-from rclpy.node import Node
 
 # Common python libraries
 import time
@@ -20,7 +21,7 @@ from visualization_msgs.msg import Marker
 # Custom libraries
 from urdf_parser_py import urdf
 from hydrodynamic_model import hydrodynamic
-import full_mpc as mpc
+import ur_mpc
 from amarsmer_control import ROV
 from amarsmer_interfaces.srv import RequestPath
 
@@ -29,13 +30,19 @@ class Controller(Node):
 
         super().__init__('mpc_control', namespace='amarsmer')
 
-        ######### Robot #########
-
+        thrusters = [f'thruster{i}' for i in range(1,5)]
+        joints = [f'thruster{i}_steering' for i in range(1,5)]
+        # self.rov = ROV(self, thrusters, joints, thrust_visual = True) # From old version of code
         self.rov = ROV(self, thrust_visual = True)
 
-        ######### ROS Interactions #########
+        self.robot = None
 
         # Publisher and subscribers
+        self.robot_sub = self.create_subscription(String, 'robot_description',
+                                                  self.read_model,
+                                                  QoSProfile(depth=1,
+                                                  durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
+
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
         self.pose_arrow_publisher = self.create_publisher(Marker, "/pose_arrow", 10)
 
@@ -47,49 +54,35 @@ class Controller(Node):
         
         self.future = None # Used for client requests
 
-        self.timer = self.create_timer(0.01, self.move)
+        self.timer = self.create_timer(0.1, self.move)
 
-        ######### Initiating variables #########
+        ## Initiating variables
 
         # Pose
         self.current_pose = None
         self.current_twist = None
 
+        # Model
+        self.mass = None
+        self.cylinder_l = None
+        self.cylinder_r = None
+        self.added_masses = None
+        self.viscous_drag = None
+        self.quadratic_drag = None
+
         # MPC Parameters
-        self.mpc_horizon = 5
-        self.mpc_time = 2
+        self.mpc_horizon = 1
+        self.mpc_time = 1.2
         self.mpc_path = Path()
-        thrust = 40.0
-        torque = 15.0
-        self.input_bounds = {"lower": np.array([-thrust, -thrust, -thrust, -torque, -torque, -torque]), # minimal force and torque
-                             "upper": np.array([thrust, thrust, thrust, torque, torque, torque]), # maximal force and torque
-                             "idx":   np.array([0, 1, 2, 3, 4, 5]) # index of the constrained inputs
+        self.input_bounds = {"lower": np.array([-40.0, -15.0]),
+                             "upper": np.array([40.0, 15.0]),
+                             "idx":   np.array([0, 1])
                              }
-
-        # Cost matrices
-        self.Q_weight = np.diag([50, # x
-                                 50, # y
-                                 50, # z
-                                 50, # phi
-                                 50, # theta
-                                 50, # psi
-                                 20, # u
-                                 20, # v
-                                 20, # w
-                                 20, # p
-                                 20, # q
-                                 20]) # r
-
-        self.R_weight = np.diag([0.05, # X
-                                 0.05, # Y
-                                 0.05, # Z
-                                 0.1, # K
-                                 0.1, # M
-                                 0.1]) # N
-
+        self.Q_weight = np.diag([50, 50, 50, 10, 20])
+        self.R_weight = np.diag([0.05, 1.0])
 
         # Initialize MPC solver
-        self.controller = None
+        self.controller = None #Updated at the start of spin
 
         # Initialize monitoring values
         self.monitoring = []
@@ -97,20 +90,86 @@ class Controller(Node):
 
         self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
 
-    def __del__(self):
-        self.get_logger().info("Saving monitoring data")
-        title = self.date +'-mpc_data'
-        np.save(title, self.monitoring)
+    def read_model(self, msg):
+
+        self.robot = urdf.Robot.from_xml_string(msg.data)
+
+        print(len(self.robot.joints), 'joints')
+        print(len(self.robot.links), 'links')
+
+
+        for j in self.robot.joints:
+            if j.type == 'continuous':
+                print('found thruster', j.name)
+
+        l1 = self.robot.links[0]
+        # print('mass:',l1.inertial.mass)
+        # print('rg:', l1.inertial.origin)
+        # print('inertia:', l1.inertial.inertia)
+
+        # Read the robot's dynamic parameters
+        Ma = [0]*6
+        Dl = [0]*6
+        Dq = [0]*6
+
+        for gz in self.robot.gazebos:
+            for plugin in gz.findall('plugin'):
+                if 'Hydrodynamics' in plugin.get('name'):
+                    for i,(axis,force) in enumerate(('xU','yV','zW', 'kP', 'mQ', 'nR')):
+                        for tag in plugin.findall(axis+force):
+                            Dl[i] = float(tag.text)
+                        for tag in plugin.findall(f'{axis}{force}abs{force}'):
+                            Dq[i] = float(tag.text)
+                        for tag in plugin.findall(f'{axis}Dot{force}'):
+                            Ma[i] = float(tag.text)
+
+        # print(Ma)
+        # print(Dl)
+        # print(Dq)
+
+        # Update robot's model for hydrodynamic computation
+        self.mass = l1.inertial.mass
+        self.added_masses = Ma
+        self.viscous_drag = Dl
+        self.quadratic_drag = Dq
+
+        read_inertia = l1.inertial.inertia
+        self.inertia = [
+            read_inertia.ixx,
+            read_inertia.ixy,
+            read_inertia.ixz,
+            read_inertia.iyy,
+            read_inertia.iyz,
+            read_inertia.izz
+        ]
 
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
         return s + ns*1e-9
 
+    def pose_to_array(self, msg_pose): # Used to convert pose msg to a regular array
+        # Extract position
+        x = msg_pose.position.x
+        y = msg_pose.position.y
+        z = msg_pose.position.z
+
+        # Extract orientation (quaternion)
+        qx = msg_pose.orientation.x
+        qy = msg_pose.orientation.y
+        qz = msg_pose.orientation.z
+        qw = msg_pose.orientation.w
+
+        # Convert quaternion to roll, pitch, yaw
+        rot = R.from_quat([qx, qy, qz, qw])
+        roll, pitch, yaw = rot.as_euler('xyz', degrees=False)
+
+        return [x,y,z,roll,pitch,yaw]
+
     def odom_callback(self, msg: Odometry):
         # Extract pose
         msg_pose = msg.pose.pose
 
-        self.current_pose = mpc.pose_to_array(msg_pose)
+        self.current_pose = self.pose_to_array(msg_pose)
 
         # Extract twist
         twist = msg.twist.twist
@@ -123,6 +182,9 @@ class Controller(Node):
         r = twist.angular.z
         
         self.current_twist = [u,v,w,p,q,r]
+
+        # self.get_logger().info(f"{self.pose}")
+        # self.get_logger().info(f"{self.twist}")
 
     def create_pose_marker(self, inPose):
         marker = Marker()
@@ -144,32 +206,20 @@ class Controller(Node):
         self.pose_arrow_publisher.publish(marker)
 
     def move(self):
-        if not self.rov.parsed():
-            return
-        
-        if not self.rov.ready():
+        if not self.rov.ready() or self.robot is None:
             return
 
+    #TODO: Rewrite solver to account for hydrodynamic effects
         if self.controller is None:
-            self.controller = mpc.MPCController(robot_mass = self.rov.mass,
-                                            inertia = self.rov.inertia,
-                                            rg = self.rov.rg,
-                                            rb = self.rov.rb,
-                                            added_masses = self.rov.added_masses,
-                                            viscous_drag = self.rov.viscous_drag,
-                                            quadratic_drag = self.rov.quadratic_drag,
+            self.controller = ur_mpc.MPCController(iz = self.inertia[-1], 
                                             horizon = self.mpc_horizon, 
                                             time = self.mpc_time, 
                                             Q_weight = self.Q_weight,
                                             R_weight = self.R_weight,
                                             input_bounds = self.input_bounds
                                             )
-            self.t0 = self.get_time()
 
-        if not self.controller.available_solver:
-            return
-
-        ######### Path request #########
+        t = self.get_time()
 
         # Check if previous future is still pending
         if self.future is not None:
@@ -186,8 +236,6 @@ class Controller(Node):
                 finally:
                     self.future = None
                 return
-            
-        t = self.get_time() - self.t0
 
         # Send new request
         request = RequestPath.Request()
@@ -195,54 +243,38 @@ class Controller(Node):
 
         self.future = self.client.call_async(request)
 
-        ######### MPC control #########
+        # MPC control
+        tau = np.zeros(2)
 
-        # Initialize mpc output
-        init_tau = False
-
-        # Update pose for mpc input
         if self.current_pose is not None and self.current_twist is not None:
-            x_current = np.array(self.current_pose # eta
-                                  + self.current_twist) # nu
+            x_current = np.array([self.current_pose[0], # x
+                                  self.current_pose[1], # y
+                                  self.current_pose[5], # yaw
+                                  self.current_twist[0], # u
+                                  self.current_twist[5]]) # r
 
-        # Solve MPC
-        
+        x_current = np.array(x_current).reshape(-1)
+
+
         if self.mpc_path.poses: # Make sure the path is not empty
+
             desired_pose = self.mpc_path.poses[0].pose
             self.create_pose_marker(desired_pose) # Display the current desired pose
-            tau = self.controller.solve(path=self.mpc_path, x_current=x_current)
-            init_tau = True
-        
-        # self.get_logger().info(f"{self.mpc_path.poses}")
 
-        ######### Robot Control #########
+            tau = self.controller.solve(path=self.mpc_path, x_current=x_current)
+
+        cylinder_l = 0.6
+        cylinder_r = 0.15
 
         # Define thrust allocation matrix and use it to apply tau on thrusters
-        B = self.rov.B
-
-        # self.get_logger().info(f"B \n {B}")
-        # self.get_logger().info(f"pinvB \n {np.linalg.pinv(B)}")
-        # self.get_logger().info(f"tau \n {tau}")
-
-        if not init_tau:
-            return
-        
-        u = np.linalg.pinv(B) @ tau
+        B = np.array([[1        ,1],
+                     [cylinder_r,-cylinder_r]]) # Note that the current frame is NOT NED so the y and z axis are reversed
+        u = np.linalg.inv(B) @ tau
 
         # give thruster forces and joint angles
-        self.rov.move([u[0], u[1], u[2], u[3]],
+        self.rov.move([u[0],u[1],0,0],
                       [0 for i in range(1,5)])
 
-        """
-        if self.mpc_path.poses:
-            self.get_logger().info(f"[DEBUG] Path length: {len(self.mpc_path.poses)}")
-            self.get_logger().info(f"[DEBUG] x_current: {x_current}")
-            for i, p in enumerate(self.mpc_path.poses[:3]):  # Just first 3
-                self.get_logger().info(f"[DEBUG] Pose[{i}] = {p.pose.position.x}, {p.pose.position.y}, {p.pose.position.z}")
-        """
-
-        """
-        # TODO: Implement the new monitoring code
         # Update and save monitoring metrics to be graphed later
         if self.mpc_path.poses:
             x_m = self.current_pose[0]
@@ -258,13 +290,12 @@ class Controller(Node):
             psi_d_m = math.atan2(siny_cosp, cosy_cosp)
 
             self.monitoring.append([x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t])
-        """
-        
+            title = self.date +'-mpc_data'
+            np.save(title, self.monitoring)
 
-if __name__ == '__main__':
 
-    rclpy.init()
-    node = Controller()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+rclpy.init()
+node = Controller()
+rclpy.spin(node)
+node.destroy_node()
+rclpy.shutdown()

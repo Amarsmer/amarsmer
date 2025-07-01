@@ -1,3 +1,8 @@
+# Remove syntax warnings from acados
+import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+
+# Regular imports
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
 import casadi as ca
 import numpy as np

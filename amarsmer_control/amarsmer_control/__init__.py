@@ -118,7 +118,7 @@ class ROV:
             # Wrench publishers, used to display thrustass,
             self.wrench_pub.append(self.node.create_publisher(WrenchStamped, 'amarsmer_' + thr + '_wrench', 1))
 
-        print('Thrusters:', thrusters)
+        # print('Thrusters:', thrusters)
 
         root = robot.get_root()
         base_link = robot.link_map[root]
@@ -260,7 +260,7 @@ class ROV:
         for joint in self.joints:
             self.joint_pub.append(self.node.create_publisher(Float64, 'cmd_'+joint, 1))
 
-        print('Thrusters steering:', self.joints)
+        # print('Thrusters steering:', self.joints)
 
         # to Casadi symbols function
         # joint states
@@ -268,6 +268,10 @@ class ROV:
         # thruster allocation matrix
         self.TAM = sp.lambdify([q[name] for name in self.joints], T)(*self.qs)
 
-        print(self.TAM)
+        # print(self.TAM)
+
         # numerical values from joint states
         self.q = [0 for _ in self.qs]
+
+        TAM_num = sp.lambdify([q[name] for name in self.joints], T, modules='numpy')
+        self.B = np.array(TAM_num(*self.q), dtype=np.float64)

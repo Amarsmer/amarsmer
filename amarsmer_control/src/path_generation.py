@@ -97,7 +97,7 @@ class PathGeneration(Node):
         dy = y_fwd - y
         yaw = math.atan2(dy, dx)
         """
-
+        
         # Kinematic square wave
 
         segment_length = 6.0
@@ -110,18 +110,11 @@ class PathGeneration(Node):
         # Determine which segment we're in
         segment_index = int(t // segment_time)
         t_in_segment = t % segment_time
-
-        # Directions: right, up, left, down (repeats every 4)
-        # directions = [
-        #     (1, 0),     # +X
-        #     (0, 1),     # +Y
-        #     (-1, 0),    # -X
-        #     (0, -1),    # -Y
-        # ]
+        
         directions = [
             (1, 0),     # +X
             (0, 1),     # +Y
-            (1, 0),    # -X
+            (1, 0),    # +X
             (0, -1),    # -Y
         ]
         yaws = [0, math.pi/2, 0, -math.pi/2]
@@ -144,7 +137,7 @@ class PathGeneration(Node):
         # Move along current segment
         x += dx * surge_speed * t_in_segment
         y += dy * surge_speed * t_in_segment
-
+        
 
         # Create and return pose
 

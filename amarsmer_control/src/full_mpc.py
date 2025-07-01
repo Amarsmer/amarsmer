@@ -1,150 +1,35 @@
+# Remove syntax warnings from acados
+import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+
+# Regular imports
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
 import casadi as ca
 import numpy as np
 import math
+from scipy.spatial.transform import Rotation as R
 
-# Utility to convert quaternion to yaw
-def get_yaw_from_quaternion(q):
-    siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
-    cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-    return math.atan2(siny_cosp, cosy_cosp)
+def pose_to_array(msg_pose): # Used to convert pose msg to a regular array
+    # Extract position
+    x = msg_pose.position.x
+    y = msg_pose.position.y
+    z = msg_pose.position.z
 
-# Model export
-"""
-def export_underwater_model(robot_mass=10, 
-                            inertia=np.ones(6), 
-                            rg = np.zeros(3), 
-                            rb = np.zeros(3),
-                            added_masses_in = None, 
-                            viscous_drag_in = None, 
-                            quadratic_drag_in = None):
+    # Extract orientation (quaternion)
+    qx = msg_pose.orientation.x
+    qy = msg_pose.orientation.y
+    qz = msg_pose.orientation.z
+    qw = msg_pose.orientation.w
 
-    model = AcadosModel()
-    model.name = "6dof_robot_model"
+    # Convert quaternion to roll, pitch, yaw
+    rot = R.from_quat([qx, qy, qz, qw])
+    phi, theta, psi = rot.as_euler('xyz', degrees=False)
 
-    # Parameters, probably inefficient but makes the code more readable in the end
-    I_xx = inertia[0]
-    I_xy = inertia[1]
-    I_xz = inertia[2]
-    I_yy = inertia[3]
-    I_yz = inertia[4]
-    I_zz = inertia[5]
+    return [x,y,z,phi,theta,psi]
 
-    xg = rg[0]
-    yg = rg[1]
-    zg = rg[2]
+def wrap_angle(angle):
+    return (angle + np.pi) % (2 * np.pi) - np.pi
 
-    xb = rb[0]
-    yb = rb[1]
-    zb = rb[2]
-
-    # added_masses = ca.vertcat(*[x for x in added_masses_in])
-    # viscous_drag = ca.vertcat(*[x for x in viscous_drag_in])
-    # quadratic_drag = ca.vertcat(*[x for x in quadratic_drag_in])
-
-    added_masses = ca.MX(added_masses_in)
-    viscous_drag = ca.MX(viscous_drag_in)
-    quadratic_drag = ca.MX(quadratic_drag_in)
-
-    # States
-    x = ca.MX.sym('x')
-    y = ca.MX.sym('y')
-    z = ca.MX.sym('z')
-    phi = ca.MX.sym('phi')
-    theta = ca.MX.sym('theta')
-    psi = ca.MX.sym('psi')
-
-    u = ca.MX.sym('u')
-    v = ca.MX.sym('v')
-    w = ca.MX.sym('w')
-    p = ca.MX.sym('p')
-    q = ca.MX.sym('q')
-    r = ca.MX.sym('r')
-
-    # nu2 = ca.vertcat(p, q, r)
-
-    eta = ca.vertcat(x, y, z, phi, theta, psi)
-    nu = ca.vertcat(u, v, w, p, q, r)
-
-    nu2 = nu[3:]
-
-    states = ca.vertcat(eta, nu)
-
-    # Controls
-    X = ca.MX.sym('X')
-    Y = ca.MX.sym('Y')
-    Z = ca.MX.sym('Z')
-    K = ca.MX.sym('K')
-    M = ca.MX.sym('M')
-    N = ca.MX.sym('N')
-
-    controls = ca.vertcat(X, Y, Z, K, M ,N)
-
-    # Math tools
-    Rz = ca.vertcat(
-        ca.horzcat(ca.cos(psi), -ca.sin(psi), 0),
-        ca.horzcat(ca.sin(psi),  ca.cos(psi), 0),
-        ca.horzcat(0,            0,           1))
-
-    Ry = ca.vertcat(
-        ca.horzcat(ca.cos(theta),  0, ca.sin(theta)),
-        ca.horzcat(0,              1,             0),
-        ca.horzcat(-ca.sin(theta), 0, ca.cos(theta)))
-
-    Rx = ca.vertcat(
-        ca.horzcat(1,           0,            0),
-        ca.horzcat(0, ca.cos(phi), -ca.sin(phi)),
-        ca.horzcat(0, ca.sin(phi),  ca.cos(phi)))
-
-    J_1 = Rz @ Ry @ Rx 
-
-    J_2 = ca.vertcat(
-        ca.horzcat(1, ca.sin(pĥi)*ca.tan(theta),   ca.cos(phi)*ca.tan(theta)),
-        ca.horzcat(0,               ca.cos(phi),                -ca.sin(phi)),
-        ca.horzcat(0, ca.sin(phi)/ca.cos(theta),  ca.cos(phi)/ca.cos(theta)))
-
-    J = ca.vertcat(
-        ca.horzcat(J_1, ca.MX.zeros(3, 3)),
-        ca.horzcat(ca.MX.zeros(3, 3), J_2))
-
-    # Dynamics
-    eta_dot = J @ nu
-
-    Ib = ca.vertcat(
-        ca.horzcat(I_xx, -I_xy, -I_xz),
-        ca.horzcat(-I_xy, I_yy, -I_yz),
-        ca.horzcat(-I_xz, -I_yz, I_zz))
-
-    M_rb_11 = m*ca.MX.eye(3) 
-    M_rb_12 = -m*ca.skew(rg)
-    M_rb_21 = m*ca.skew(rg)
-    M_rb_22 = Ib
-
-    M_rb = ca.vertcat(
-        ca.horzcat(M_rb_11, M_rb_12),
-        ca.horzcat(M_rb_21, M_rb_22))
-
-    M_a = -ca.diag(added_masses)
-
-    C_rb_11 = m*ca.skew(nu2)
-    C_rb_12 = -m*ca.skew(nu2) @ ca.skew(rg)
-    C_rb_21 = m*ca.skew(rg) @ ca.skew(nu2)
-    C_rb_22 = ca.skew(nu2) @ Ib
-
-    C_rb = ca.vertcat(
-        ca.horzcat(C_rb_11, C_rb_12),
-        ca.horzcat(C_rb_21, C_rb_22))
-
-    nu_dot = ca.vertcat(u_dot, v_dot, w_dot, p_dot, q_dot, r_dot)
-    xdot = ca.vertcat(eta_dot, nu_dot)
-
-    model.x = states
-    model.u = controls
-    model.f_expl_expr = xdot
-    model.f_impl_expr = states - xdot
-
-    return model
-    """
 class MPCController:
     def __init__(self, robot_mass=10, 
                  inertia=np.zeros(6), 
@@ -159,6 +44,8 @@ class MPCController:
                  R_weight=None, 
                  input_bounds=None):
 
+        self.available_solver = False
+
         self.mass = robot_mass
         self.inertia = inertia
         self.rg = rg
@@ -171,22 +58,19 @@ class MPCController:
         self.T = time
         self.dt = time / horizon
 
-        self.Q = Q_weight if Q_weight is not None else np.diag([10, 10, 10, 1, 1])
-        self.R = R_weight if R_weight is not None else np.diag([0.1, 0.1])
-        self.input_bounds = input_bounds if input_bounds is not None else {
-            "lower": np.array([-5.0, -2.0]),
-            "upper": np.array([5.0, 2.0]),
-            "idx": np.array([0, 1])
-        }
+        self.Q = Q_weight
+        self.R = R_weight
+        self.input_bounds = input_bounds
 
         self.model = self.export_underwater_model()
         self.ocp = self._build_ocp()
         self.solver = AcadosOcpSolver(self.ocp, json_file='acados_ocp.json')
+        self.available_solver = True
 
     def export_underwater_model(self):
 
         model = AcadosModel()
-        model.name = "6dof_robot_model"
+        model.name = "robot_model"
 
         ### Parameters, probably inefficient but makes the code more readable in the end
         m = ca.MX(self.mass)
@@ -208,10 +92,6 @@ class MPCController:
         yb = rb[1]
         zb = rb[2]
 
-        # added_masses = ca.vertcat(*[x for x in added_masses_in])
-        # viscous_drag = ca.vertcat(*[x for x in viscous_drag_in])
-        # quadratic_drag = ca.vertcat(*[x for x in quadratic_drag_in])
-
         added_masses = ca.MX(self.added_masses)
         viscous_drag = ca.MX(self.viscous_drag)
         quadratic_drag = ca.MX(self.quadratic_drag)
@@ -230,8 +110,6 @@ class MPCController:
         p = ca.MX.sym('p')
         q = ca.MX.sym('q')
         r = ca.MX.sym('r')
-
-        # nu2 = ca.vertcat(p, q, r)
 
         eta = ca.vertcat(x, y, z, phi, theta, psi)
         nu = ca.vertcat(u, v, w, p, q, r)
@@ -376,7 +254,7 @@ class MPCController:
         ocp.cost.W[:nx, :nx] = self.Q
         ocp.cost.W[nx:, nx:] = self.R
         ocp.cost.W_e = self.Q
-        ocp.constraints.x0 = np.zeros(5)
+        ocp.constraints.x0 = np.zeros(12)
         ocp.cost.yref = np.zeros(ny)
         ocp.cost.yref_e = np.zeros(nx)
 
@@ -403,16 +281,6 @@ class MPCController:
 
         return ocp
 
-    def update_weights(self, Q_weight=None, R_weight=None):
-        if Q_weight is not None:
-            self.Q = Q_weight
-        if R_weight is not None:
-            self.R = R_weight
-
-        # Rebuild OCP and solver
-        self.ocp = self._build_ocp()
-        self.solver = AcadosOcpSolver(self.ocp, json_file='acados_ocp.json')
-
     def solve(self, path, x_current):
         poses = path.poses[:self.N + 1]
         if len(poses) < self.N + 1:
@@ -421,25 +289,38 @@ class MPCController:
         x_refs, u_refs = [], []
         for i in range(self.N + 1):
             pose = poses[i].pose
-            x = pose.position.x
-            y = pose.position.y
-            psi = get_yaw_from_quaternion(pose.orientation)
-            psi = (psi + np.pi) % (2 * np.pi) - np.pi
 
+            x,y,z,phi,theta,psi = pose_to_array(pose)
+            
             if i > 0:
                 prev_pose = poses[i - 1].pose
-                dx = x - prev_pose.position.x
-                dy = y - prev_pose.position.y
-                u = math.hypot(dx, dy) / self.dt
-                psi_prev = get_yaw_from_quaternion(prev_pose.orientation)
-                dpsi = (psi - psi_prev + np.pi) % (2 * np.pi) - np.pi
-                r = dpsi / self.dt
-            else:
-                u, r = 0.0, 0.0
 
-            x_refs.append([x, y, psi, u, r])
+                prev_x, prev_y, prev_z, prev_phi, prev_theta, prev_psi = pose_to_array(prev_pose)
+
+                # Linear velocities
+                dx = x - prev_x
+                dy = y - prev_y
+                dz = z - prev_z
+                
+                u = dx / self.dt
+                v = dy / self.dt
+                w = dz / self.dt
+
+                # Angular velocities
+                dphi = wrap_angle(phi - prev_phi)
+                dtheta = wrap_angle(theta - prev_theta)
+                dpsi = wrap_angle(psi - prev_psi)
+                
+                p = dphi / self.dt
+                q = dtheta / self.dt
+                r = dpsi / self.dt
+
+            else:
+                u,v,w,p,q,r = np.zeros(6)
+
+            x_refs.append([x, y, z, phi, theta, psi, u, v, w, p, q, r])
             if i < self.N:
-                u_refs.append([0.0, 0.0])
+                u_refs.append(np.zeros(6))
 
         self.solver.set(0, 'lbx', x_current)
         self.solver.set(0, 'ubx', x_current)

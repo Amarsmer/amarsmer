@@ -12,5 +12,6 @@ def generate_launch_description():
     sl.node('amarsmer_control', 'path_publisher.py')
 
     # sl.node('amarsmer_control', 'mpc_control.py')
+    sl.node('amarsmer_control', 'ur_mpc_control.py')
 
     return sl.launch_description()

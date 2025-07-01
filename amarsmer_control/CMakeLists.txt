@@ -9,9 +9,11 @@ find_package(nav_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
-# install(PROGRAMS src/control.py
-#         DESTINATION lib/${PROJECT_NAME})
+
 install(PROGRAMS src/mpc_control.py
+        DESTINATION lib/${PROJECT_NAME})
+
+install(PROGRAMS src/ur_mpc_control.py
         DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS src/ur_mpc.py
