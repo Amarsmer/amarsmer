@@ -30,18 +30,7 @@ class Controller(Node):
 
         super().__init__('mpc_control', namespace='amarsmer')
 
-        thrusters = [f'thruster{i}' for i in range(1,5)]
-        joints = [f'thruster{i}_steering' for i in range(1,5)]
-        # self.rov = ROV(self, thrusters, joints, thrust_visual = True) # From old version of code
         self.rov = ROV(self, thrust_visual = True)
-
-        self.robot = None
-
-        # Publisher and subscribers
-        self.robot_sub = self.create_subscription(String, 'robot_description',
-                                                  self.read_model,
-                                                  QoSProfile(depth=1,
-                                                  durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
 
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
         self.pose_arrow_publisher = self.create_publisher(Marker, "/pose_arrow", 10)
@@ -54,7 +43,7 @@ class Controller(Node):
         
         self.future = None # Used for client requests
 
-        self.timer = self.create_timer(0.1, self.move)
+        self.timer = self.create_timer(0.001, self.move)
 
         ## Initiating variables
 
@@ -63,12 +52,12 @@ class Controller(Node):
         self.current_twist = None
 
         # Model
-        self.mass = None
-        self.cylinder_l = None
-        self.cylinder_r = None
-        self.added_masses = None
-        self.viscous_drag = None
-        self.quadratic_drag = None
+        # self.mass = None
+        # self.cylinder_l = None
+        # self.cylinder_r = None
+        # self.added_masses = None
+        # self.viscous_drag = None
+        # self.quadratic_drag = None
 
         # MPC Parameters
         self.mpc_horizon = 1
@@ -89,59 +78,6 @@ class Controller(Node):
         self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2','t'])
 
         self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
-
-    def read_model(self, msg):
-
-        self.robot = urdf.Robot.from_xml_string(msg.data)
-
-        print(len(self.robot.joints), 'joints')
-        print(len(self.robot.links), 'links')
-
-
-        for j in self.robot.joints:
-            if j.type == 'continuous':
-                print('found thruster', j.name)
-
-        l1 = self.robot.links[0]
-        # print('mass:',l1.inertial.mass)
-        # print('rg:', l1.inertial.origin)
-        # print('inertia:', l1.inertial.inertia)
-
-        # Read the robot's dynamic parameters
-        Ma = [0]*6
-        Dl = [0]*6
-        Dq = [0]*6
-
-        for gz in self.robot.gazebos:
-            for plugin in gz.findall('plugin'):
-                if 'Hydrodynamics' in plugin.get('name'):
-                    for i,(axis,force) in enumerate(('xU','yV','zW', 'kP', 'mQ', 'nR')):
-                        for tag in plugin.findall(axis+force):
-                            Dl[i] = float(tag.text)
-                        for tag in plugin.findall(f'{axis}{force}abs{force}'):
-                            Dq[i] = float(tag.text)
-                        for tag in plugin.findall(f'{axis}Dot{force}'):
-                            Ma[i] = float(tag.text)
-
-        # print(Ma)
-        # print(Dl)
-        # print(Dq)
-
-        # Update robot's model for hydrodynamic computation
-        self.mass = l1.inertial.mass
-        self.added_masses = Ma
-        self.viscous_drag = Dl
-        self.quadratic_drag = Dq
-
-        read_inertia = l1.inertial.inertia
-        self.inertia = [
-            read_inertia.ixx,
-            read_inertia.ixy,
-            read_inertia.ixz,
-            read_inertia.iyy,
-            read_inertia.iyz,
-            read_inertia.izz
-        ]
 
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
@@ -206,12 +142,13 @@ class Controller(Node):
         self.pose_arrow_publisher.publish(marker)
 
     def move(self):
-        if not self.rov.ready() or self.robot is None:
+        if not self.rov.ready():
             return
 
     #TODO: Rewrite solver to account for hydrodynamic effects
         if self.controller is None:
-            self.controller = ur_mpc.MPCController(iz = self.inertia[-1], 
+            self.controller = ur_mpc.MPCController(robot_mass = self.rov.mass,
+                                            iz = self.rov.inertia[-1], 
                                             horizon = self.mpc_horizon, 
                                             time = self.mpc_time, 
                                             Q_weight = self.Q_weight,

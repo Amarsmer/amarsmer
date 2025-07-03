@@ -47,7 +47,7 @@ class Controller(Node):
         
         self.future = None # Used for client requests
 
-        self.timer = self.create_timer(0.01, self.move)
+        # self.timer = self.create_timer(0.01, self.move)
 
         ######### Initiating variables #########
 
@@ -90,6 +90,12 @@ class Controller(Node):
 
         # Initialize MPC solver
         self.controller = None
+        self.ready = False
+
+        # while self.ready == False:
+        #     self.initialize_MPC()
+
+        self.timer = self.create_timer(0.01, self.move)
 
         # Initialize monitoring values
         self.monitoring = []
@@ -143,14 +149,42 @@ class Controller(Node):
 
         self.pose_arrow_publisher.publish(marker)
 
+    # def initialize_MPC(self):
+    #     # self.get_logger().info(f"Parsed: {self.rov.parsed()}")
+    #     # self.get_logger().info(f"Ready: {self.rov.ready()}")
+
+    #     if not self.rov.parsed():
+    #         return
+
+    #     if not self.rov.ready():
+    #         return
+
+        
+    #     self.controller = mpc.MPCController(robot_mass = self.rov.mass,
+    #                                     inertia = self.rov.inertia,
+    #                                     rg = self.rov.rg,
+    #                                     rb = self.rov.rb,
+    #                                     added_masses = self.rov.added_masses,
+    #                                     viscous_drag = self.rov.viscous_drag,
+    #                                     quadratic_drag = self.rov.quadratic_drag,
+    #                                     horizon = self.mpc_horizon, 
+    #                                     time = self.mpc_time, 
+    #                                     Q_weight = self.Q_weight,
+    #                                     R_weight = self.R_weight,
+    #                                     input_bounds = self.input_bounds
+    #                                     )
+
+    #     self.ready = True
+
     def move(self):
+
         if not self.rov.parsed():
             return
-        
+
         if not self.rov.ready():
             return
 
-        if self.controller is None:
+        if self.controller == None:
             self.controller = mpc.MPCController(robot_mass = self.rov.mass,
                                             inertia = self.rov.inertia,
                                             rg = self.rov.rg,
@@ -164,10 +198,8 @@ class Controller(Node):
                                             R_weight = self.R_weight,
                                             input_bounds = self.input_bounds
                                             )
-            self.t0 = self.get_time()
 
-        if not self.controller.available_solver:
-            return
+            self.t0 = self.get_time()
 
         ######### Path request #########
 

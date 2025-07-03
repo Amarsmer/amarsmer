@@ -64,7 +64,7 @@ class MPCController:
             "idx": np.array([0, 1])
         }
 
-        self.model = export_underwater_model(robot_mass, iz)
+        self.model = export_underwater_model(self.mass, self.iz)
         self.ocp = self._build_ocp()
         self.solver = AcadosOcpSolver(self.ocp, json_file='acados_ocp.json')
 

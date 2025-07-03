@@ -25,11 +25,10 @@ class ROV:
         self.node = node
         self.display_wrench = thrust_visual # Creating and storing the bool so it may be accessed and changed during simulation if the need arises
 
-        robot_sub = node.create_subscription(String, 'robot_description',
+        self.robot_sub = node.create_subscription(String, 'robot_description',
                                                 self.read_model,
                                                 QoSProfile(depth=1,
                                                 durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
-        # robot_sub
 
         # state feedback
         self.p = None
@@ -115,7 +114,7 @@ class ROV:
         thrusters.sort()
         for thr in thrusters:
             self.thruster_pub.append(self.node.create_publisher(Float64, 'cmd_'+thr, 1))
-            # Wrench publishers, used to display thrustass,
+            # Wrench publishers, used to display thrusters,
             self.wrench_pub.append(self.node.create_publisher(WrenchStamped, 'amarsmer_' + thr + '_wrench', 1))
 
         # print('Thrusters:', thrusters)

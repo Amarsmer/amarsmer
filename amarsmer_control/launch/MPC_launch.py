@@ -5,7 +5,7 @@ def generate_launch_description():
 
     sl = SimpleLauncher(use_sim_time = True)
 
-    sl.include('amarsmer_description','world_launch.py', launch_arguments={'sliders': False})
+    sl.include('amarsmer_description', 'world_launch.py', launch_arguments={'sliders': False})
 
     sl.node('amarsmer_control', 'path_generation.py')
 
