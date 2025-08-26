@@ -10,15 +10,15 @@ find_package(rosidl_default_generators REQUIRED)
 
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
-install(PROGRAMS src/mpc_control.py
+install(PROGRAMS src/MPC/mpc_control.py
         DESTINATION lib/${PROJECT_NAME})
 
-install(PROGRAMS src/ur_mpc_control.py
+install(PROGRAMS src/MPC/ur_mpc_control.py
         DESTINATION lib/${PROJECT_NAME})
 
-install(PROGRAMS src/ur_mpc.py
+install(PROGRAMS src/MPC/ur_mpc.py
         DESTINATION lib/${PROJECT_NAME})
-        install(PROGRAMS src/full_mpc.py
+        install(PROGRAMS src/MPC/full_mpc.py
         DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS src/pose_to_rpy.py
