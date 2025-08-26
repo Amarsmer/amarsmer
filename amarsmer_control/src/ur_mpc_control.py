@@ -51,14 +51,6 @@ class Controller(Node):
         self.current_pose = None
         self.current_twist = None
 
-        # Model
-        # self.mass = None
-        # self.cylinder_l = None
-        # self.cylinder_r = None
-        # self.added_masses = None
-        # self.viscous_drag = None
-        # self.quadratic_drag = None
-
         # MPC Parameters
         self.mpc_horizon = 1
         self.mpc_time = 1.2
@@ -145,10 +137,13 @@ class Controller(Node):
         if not self.rov.ready():
             return
 
-    #TODO: Rewrite solver to account for hydrodynamic effects
         if self.controller is None:
             self.controller = ur_mpc.MPCController(robot_mass = self.rov.mass,
                                             iz = self.rov.inertia[-1], 
+                                            a_u = self.rov.added_masses[0],
+                                            a_r = self.rov.added_masses[5],
+                                            d_u = self.rov.viscous_drag[0],
+                                            d_r = self.rov.viscous_drag[5],
                                             horizon = self.mpc_horizon, 
                                             time = self.mpc_time, 
                                             Q_weight = self.Q_weight,

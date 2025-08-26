@@ -15,6 +15,7 @@ def get_yaw_from_quaternion(q):
     return math.atan2(siny_cosp, cosy_cosp)
 
 # Model export
+""" # Old version without hydrodynamic damping
 def export_underwater_model(robot_mass=10, iz=5):
     model = AcadosModel()
     model.name = "ur_robot_model"
@@ -46,10 +47,114 @@ def export_underwater_model(robot_mass=10, iz=5):
     model.f_impl_expr = states - xdot
 
     return model
+"""
+def export_underwater_model(
+    robot_mass=10.0,
+    iz=5.0,
+    # Added-mass matrix entries (positive values increase apparent inertia)
+    a_u   = 2.0,    # added mass in surge
+    a_r   = 0.5,    # added inertia in yaw
+
+    # Linear damping (D). Use positive values; model subtracts D*nu.
+    d_u   = 2.0,    # surge damping
+    d_r   = 1.0,    # yaw damping
+):
+
+    """
+    3-DOF kinematics (x,y,psi) + 2-DOF dynamics (u,r) with added mass.
+
+    States: x, y, psi, u, r
+    Inputs: tau_u, tau_r
+
+    Equations:
+      M * nu_dot = tau - D*nu - g(eta)
+    where M = M_rb + M_a (2x2), nu = [u, r]^T.
+    """
+
+    model = AcadosModel()
+    model.name = "ur_robot_model"
+
+    # States
+    x   = ca.SX.sym('x')
+    y   = ca.SX.sym('y')
+    psi = ca.SX.sym('psi')
+    u   = ca.SX.sym('u')
+    r   = ca.SX.sym('r')
+    X   = ca.vertcat(x, y, psi, u, r)
+
+    # State derivatives (for implicit form)
+    x_dot_sym   = ca.SX.sym('x_dot')
+    y_dot_sym   = ca.SX.sym('y_dot')
+    psi_dot_sym = ca.SX.sym('psi_dot')
+    u_dot_sym   = ca.SX.sym('u_dot')
+    r_dot_sym   = ca.SX.sym('r_dot')
+    Xdot = ca.vertcat(x_dot_sym, y_dot_sym, psi_dot_sym, u_dot_sym, r_dot_sym)
+
+    # Controls
+    tau_u = ca.SX.sym('tau_u')
+    tau_r = ca.SX.sym('tau_r')
+    U = ca.vertcat(tau_u, tau_r)
+
+    # Kinematics (no sway)
+    x_dot   = u * ca.cos(psi)
+    y_dot   = u * ca.sin(psi)
+    psi_dot = r
+
+    # Build rigid-body mass and added-mass matrices (2x2 for [u, r])
+    M_rb = ca.DM([[robot_mass, 0.0],
+                  [0.0,        iz     ]])
+
+    M_a = ca.DM([[a_u,  0],
+                 [0, a_r ]])
+
+    M = M_rb + M_a    # total mass matrix (2x2)
+
+    # Damping matrix D (2x2)
+    D = ca.DM([[d_u,  0],
+               [0, d_r ]])
+
+    # Velocity vector nu = [u, r]
+    nu = ca.vertcat(u, r)
+
+    # D*nu
+    Dnu = ca.mtimes(D, nu)
+
+    # Inputs (tau)
+    tau = ca.vertcat(tau_u, tau_r)
+
+    # Solve for nu_dot: M * nu_dot = tau - D*nu - g  =>  nu_dot = M^{-1} * (...)
+    # Use casadi inverse (for 2x2 it's fine). If you prefer numerical stability
+    # for larger matrices, use ca.solve(M, rhs) instead.
+    nu_dot = ca.inv(M) @ (tau - Dnu)
+
+    u_ddot = nu_dot[0]
+    r_ddot = nu_dot[1]
+
+    # assemble xdot
+    xdot = ca.vertcat(x_dot, y_dot, psi_dot, u_ddot, r_ddot)
+
+    # Pack model
+    model.x = X
+    model.xdot = Xdot
+    model.u = U
+    model.f_expl_expr = xdot
+    model.f_impl_expr = Xdot - xdot
+
+    return model
 
 class MPCController:
-    def __init__(self, robot_mass=10, iz=5, horizon=20, time=2.0,
-                 Q_weight=None, R_weight=None, input_bounds=None):
+    def __init__(self, robot_mass=10, 
+        iz=5, 
+        a_u = 2.0,
+        a_r = 0.5, 
+        d_u = 2.0,
+        d_r = 1.0, 
+        horizon=20, 
+        time=2.0,
+        Q_weight=None, 
+        R_weight=None, 
+        input_bounds=None):
+
         self.mass = robot_mass
         self.iz = iz
         self.N = horizon
