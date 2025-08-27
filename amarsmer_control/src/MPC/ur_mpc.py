@@ -15,7 +15,7 @@ def get_yaw_from_quaternion(q):
     return math.atan2(siny_cosp, cosy_cosp)
 
 # Model export
-""" # Old version without hydrodynamic damping
+""" # Old version, does not account for hydrodynamic damping or added masses
 def export_underwater_model(robot_mass=10, iz=5):
     model = AcadosModel()
     model.name = "ur_robot_model"
@@ -125,7 +125,7 @@ def export_underwater_model(
     # Solve for nu_dot: M * nu_dot = tau - D*nu - g  =>  nu_dot = M^{-1} * (...)
     # Use casadi inverse (for 2x2 it's fine). If you prefer numerical stability
     # for larger matrices, use ca.solve(M, rhs) instead.
-    nu_dot = ca.inv(M) @ (tau - Dnu)
+    nu_dot =  ca.mtimes(ca.inv(M), tau + Dnu)
 
     u_ddot = nu_dot[0]
     r_ddot = nu_dot[1]
@@ -169,7 +169,7 @@ class MPCController:
             "idx": np.array([0, 1])
         }
 
-        self.model = export_underwater_model(self.mass, self.iz)
+        self.model = export_underwater_model(self.mass, self.iz, a_u, a_r, d_u, d_r)
         self.ocp = self._build_ocp()
         self.solver = AcadosOcpSolver(self.ocp, json_file='acados_ocp.json')
 

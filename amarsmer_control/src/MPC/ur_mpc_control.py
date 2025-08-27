@@ -59,8 +59,16 @@ class Controller(Node):
                              "upper": np.array([40.0, 15.0]),
                              "idx":   np.array([0, 1])
                              }
-        self.Q_weight = np.diag([50, 50, 50, 10, 20])
-        self.R_weight = np.diag([0.05, 1.0])
+        self.Q_weight = np.diag([50, # x
+                                 50, # y 
+                                 50, # psi
+                                 20, # u
+                                 20  # r
+                                 ])
+
+        self.R_weight = np.diag([0.1, # X
+                                 0.5  # N
+                                 ])
 
         # Initialize MPC solver
         self.controller = None #Updated at the start of spin
@@ -206,7 +214,7 @@ class Controller(Node):
         # give thruster forces and joint angles
         self.rov.move([u[0],u[1],0,0],
                       [0 for i in range(1,5)])
-
+        '''
         # Update and save monitoring metrics to be graphed later
         if self.mpc_path.poses:
             x_m = self.current_pose[0]
@@ -224,7 +232,7 @@ class Controller(Node):
             self.monitoring.append([x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t])
             title = self.date +'-mpc_data'
             np.save(title, self.monitoring)
-
+        '''
 
 rclpy.init()
 node = Controller()

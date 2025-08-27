@@ -1,6 +1,6 @@
 # Remove syntax warnings from acados
-import warnings
-warnings.filterwarnings("ignore", category=SyntaxWarning)
+# import warnings
+# warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 # Regular imports
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
@@ -145,7 +145,9 @@ class MPCController:
             ca.horzcat(0, ca.cos(phi), -ca.sin(phi)),
             ca.horzcat(0, ca.sin(phi),  ca.cos(phi)))
 
-        J_1 = Rz @ Ry @ Rx 
+        # J_1 = Rz @ Ry @ Rx 
+
+        J_1 = ca.mtimes(Rz,ca.mtimes(Ry, Rx))
 
         J_2 = ca.vertcat(
             ca.horzcat(1, ca.sin(phi)*ca.tan(theta),   ca.cos(phi)*ca.tan(theta)),
@@ -156,7 +158,7 @@ class MPCController:
             ca.horzcat(J_1, ca.MX.zeros(3, 3)),
             ca.horzcat(ca.MX.zeros(3, 3), J_2))
 
-        eta_dot = J @ nu 
+        eta_dot = ca.mtimes(J, nu)
 
         ### Dynamics
         Ib = ca.vertcat(
@@ -186,9 +188,9 @@ class MPCController:
 
         # Rigid body
         C_rb_11 = m*ca.skew(nu_2)
-        C_rb_12 = -m*ca.skew(nu_2) @ ca.skew(rg)
-        C_rb_21 = m*ca.skew(rg) @ ca.skew(nu_2)
-        C_rb_22 = ca.skew(nu_2) @ Ib
+        C_rb_12 = ca.mtimes(-m*ca.skew(nu_2), ca.skew(rg))
+        C_rb_21 = ca.mtimes(m*ca.skew(rg), ca.skew(nu_2))
+        C_rb_22 = ca.mtimes(ca.skew(nu_2), Ib)
 
         C_rb = ca.vertcat(
             ca.horzcat(C_rb_11, C_rb_12),
@@ -227,7 +229,10 @@ class MPCController:
                 -(xg * W - xb * B) * ca.cos(theta) * ca.sin(phi) - (yg * W - yb * B) * ca.sin(theta))
 
         ### State-space
-        nu_dot = ca.inv(M) @ (tau - (C @ nu + D @ nu + G))
+        Dnu = ca.mtimes(D, nu)
+        Cnu = ca.mtimes(C, nu)
+
+        nu_dot = ca.mtimes(ca.inv(M), (tau - (Cnu + Dnu + G)))
         x_dot = ca.vertcat(eta_dot, nu_dot)
 
         model.x = states
