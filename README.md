@@ -55,16 +55,22 @@ Gazebo will:
 
 # High-level control
 
+## Open loop
 Basic control is available in the [auv_control package](https://github.com/CentraleNantesROV/auv_control)
 
 The simple node running an open-loop control (use the world launch first) can be ran as:
 
 `ros2 run amarsmer_control control.py`
 
+## MPC
 The full launch file for MPC control (including world launch) is ran with:
 
 `ros2 launch amarsmer_control MPC_launch.py`
 
+## AI
+The full launch file for AI training and control (including world launch) is ran with:
+
+`ros2 launch amarsmer_control AI_launch.py`
 
 # License
 Amarsmer package is open-sourced under the MIT License. See the LICENSE file for details.
