@@ -17,6 +17,7 @@ class PyTorchOnlineTrainer:
         """
         self.robot = robot
         self.network = nn_model
+
         # Facteurs de normalisation 
         self.alpha = [1/6, 1/6, 1/(math.pi)]
         

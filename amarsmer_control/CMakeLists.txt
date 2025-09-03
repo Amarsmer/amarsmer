@@ -10,13 +10,13 @@ find_package(rosidl_default_generators REQUIRED)
 
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
-install(PROGRAMS src/IA/run.py
+install(PROGRAMS src/AI/AI_run.py
         DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS src/IA/online_training.py
+install(PROGRAMS src/AI/online_training.py
         DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS src/IA/backprop.py
+install(PROGRAMS src/AI/backprop.py
         DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS src/IA/monitoring.py
+install(PROGRAMS src/AI/monitoring.py
         DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS src/MPC/mpc_control.py
@@ -29,14 +29,13 @@ install(PROGRAMS src/MPC/ur_mpc.py
         install(PROGRAMS src/MPC/full_mpc.py
         DESTINATION lib/${PROJECT_NAME})
 
-install(PROGRAMS src/pose_to_rpy.py
+install(PROGRAMS src/_custom_libraries/pose_to_rpy.py
         DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS src/hydrodynamic_model.py
+install(PROGRAMS src/_custom_libraries/path_publisher.py
         DESTINATION lib/${PROJECT_NAME})
-
-install(PROGRAMS src/path_publisher.py
+install(PROGRAMS src/_custom_libraries/path_generation.py
         DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS src/path_generation.py
+        install(PROGRAMS src/_custom_libraries/functions.py
         DESTINATION lib/${PROJECT_NAME})
 
 ament_python_install_package(${PROJECT_NAME})

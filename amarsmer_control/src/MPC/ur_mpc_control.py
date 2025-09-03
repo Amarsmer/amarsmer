@@ -20,10 +20,10 @@ from visualization_msgs.msg import Marker
 
 # Custom libraries
 from urdf_parser_py import urdf
-from hydrodynamic_model import hydrodynamic
 import ur_mpc
 from amarsmer_control import ROV
 from amarsmer_interfaces.srv import RequestPath
+import functions as f
 
 class Controller(Node):
     def __init__(self):
@@ -44,12 +44,6 @@ class Controller(Node):
         self.future = None # Used for client requests
 
         self.timer = self.create_timer(0.001, self.move)
-
-        ## Initiating variables
-
-        # Pose
-        self.current_pose = None
-        self.current_twist = None
 
         # MPC Parameters
         self.mpc_horizon = 1
@@ -82,6 +76,8 @@ class Controller(Node):
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
         return s + ns*1e-9
+
+    """
 
     def pose_to_array(self, msg_pose): # Used to convert pose msg to a regular array
         # Extract position
@@ -140,6 +136,12 @@ class Controller(Node):
         marker.lifetime.sec = 0  # persistent
 
         self.pose_arrow_publisher.publish(marker)
+    """
+    def odom_callback(self, msg: Odometry):
+        pose, twist = f.odometry(msg)
+
+        self.rov.current_pose = pose
+        self.rov.current_twist = twist
 
     def move(self):
         if not self.rov.ready():
@@ -186,12 +188,12 @@ class Controller(Node):
         # MPC control
         tau = np.zeros(2)
 
-        if self.current_pose is not None and self.current_twist is not None:
-            x_current = np.array([self.current_pose[0], # x
-                                  self.current_pose[1], # y
-                                  self.current_pose[5], # yaw
-                                  self.current_twist[0], # u
-                                  self.current_twist[5]]) # r
+        if self.rov.current_pose is not None and self.rov.current_twist is not None:
+            x_current = np.array([self.rov.current_pose[0], # x
+                                  self.rov.current_pose[1], # y
+                                  self.rov.current_pose[5], # yaw
+                                  self.rov.current_twist[0], # u
+                                  self.rov.current_twist[5]]) # r
 
         x_current = np.array(x_current).reshape(-1)
 
@@ -199,7 +201,7 @@ class Controller(Node):
         if self.mpc_path.poses: # Make sure the path is not empty
 
             desired_pose = self.mpc_path.poses[0].pose
-            self.create_pose_marker(desired_pose) # Display the current desired pose
+            f.create_pose_marker(desired_pose, self.pose_arrow_publisher) # Display the current desired pose
 
             tau = self.controller.solve(path=self.mpc_path, x_current=x_current)
 

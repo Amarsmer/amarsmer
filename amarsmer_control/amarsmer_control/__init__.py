@@ -30,6 +30,10 @@ class ROV:
                                                 QoSProfile(depth=1,
                                                 durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
 
+        # Pose
+        self.current_pose = None
+        self.current_twist = None
+
         # state feedback
         self.p = None
         self.R = None

@@ -7,10 +7,10 @@ import numpy as np
 import math
 import random
 
-class PioneerNN(nn.Module):
+class NN(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
-        hidden_size = 1000  # valeur modifiée pour la couche cachée.
-        super(PioneerNN, self).__init__()
+        # hidden_size = 1000  # valeur modifiée pour la couche cachée.
+        super(NN, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.output_size = output_size

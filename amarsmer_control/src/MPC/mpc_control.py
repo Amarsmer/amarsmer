@@ -19,10 +19,10 @@ from visualization_msgs.msg import Marker
 
 # Custom libraries
 from urdf_parser_py import urdf
-from hydrodynamic_model import hydrodynamic
 import full_mpc as mpc
 from amarsmer_control import ROV
 from amarsmer_interfaces.srv import RequestPath
+import functions as f
 
 class Controller(Node):
     def __init__(self):
