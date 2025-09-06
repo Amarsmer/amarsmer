@@ -46,10 +46,10 @@ class Controller(Node):
         self.declare_parameter('display', True)
         self.declare_parameter('load_weights', False)
         self.declare_parameter('train', True)
-        self.declare_parameter('continue_running', True)
         self.declare_parameter('target', '0 0 0')
-        self.declare_parameter('input_string', '')
+
         self.input_string = ''
+
 
         self.rov = ROV(self, thrust_visual = True)
 
@@ -84,9 +84,6 @@ class Controller(Node):
         self.network = NN(input_size, HL_size, output_size)
 
         self.trainer = None
-        self.training_initiated = False
-
-        # self.run()
 
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
@@ -107,88 +104,81 @@ class Controller(Node):
     def run(self):
         if not self.rov.ready():
             return
-        
+
+        # Initialize the robot
+        monitor = RobotMonitorAdapter(world_bounds=self.WORLD_BOUNDS)
+
+        '''
+        # Register cleanup function to ensure simulation is stopped
+        def cleanup():
+            print("Cleaning up and stopping simulation...")
+            if hasattr(robot, 'cleanup'):
+                robot.cleanup()
+            if hasattr(monitor, 'stop_monitoring'):
+                monitor.stop_monitoring()
+        atexit.register(cleanup)
+        '''
+
+        # Wait a moment to ensure the simulation is fully started
+        time.sleep(1)
+
+        # Ask for display preference
+        display_curves= self.get_parameter('display').get_parameter_value().bool_value
+
+        if display_curves:
+            monitor.start_monitoring()
+
+        # Chargement de poids existants
+        if self.get_parameter('load_weights').get_parameter_value().bool_value:
+            with open('last_w_torch.json') as fp:
+                json_obj = json.load(fp)
+            self.network.load_weights_from_json(json_obj, HL_size)
+            
+
+        # Initialiser le trainer PyTorch avec monitoring
+        monitor_instance = monitor if display_curves else None
+        self.trainer = PyTorchOnlineTrainer(self.rov, self.network, monitor_instance)
+
+        train = self.get_parameter('load_weights').get_parameter_value().bool_value #Boolean
+
+        if self.rov.current_pose == None:
+            return
+        self.trainer.training = (train)
+
+        """
+        # Demander la cible
+        target_input = input("Enter the first target : x y radian --> ")
+        target = target_input.split()
+        if len(target) != 3:
+            raise ValueError("Need exactly 3 values")
+        for i in range(len(target)):
+            target[i] = float(target[i])
+        """
         target = self.get_parameter('target').get_parameter_value().string_value
         target = list(map(float, target.split())) # convert a multiple values string to a list
 
         target_pose = f.make_pose(target)
         f.create_pose_marker(target_pose, self.pose_arrow_publisher)
 
-        if not self.training_initiated:
-            self.training_initiated = True
-
-            # Initialize the robot
-            self.monitor = RobotMonitorAdapter(world_bounds=self.WORLD_BOUNDS)
-
-            '''
-            # Register cleanup function to ensure simulation is stopped
-            def cleanup():
-                print("Cleaning up and stopping simulation...")
-                if hasattr(robot, 'cleanup'):
-                    robot.cleanup()
-                if hasattr(monitor, 'stop_monitoring'):
-                    monitor.stop_monitoring()
-            atexit.register(cleanup)
-            '''
-
-            # Wait a moment to ensure the simulation is fully started
-            time.sleep(1)
-
-            # Ask for display preference
-            self.display_curves= self.get_parameter('display').get_parameter_value().bool_value
-            # self.get_logger().info(f"stored display bool: {self.display_curves}")
-
-            if self.display_curves:
-                self.monitor.start_monitoring()
-
-            # Chargement de poids existants
-            if self.get_parameter('load_weights').get_parameter_value().bool_value:
-                with open('last_w_torch.json') as fp:
-                    json_obj = json.load(fp)
-                self.network.load_weights_from_json(json_obj, HL_size)
-                
-
-            # Initialiser le trainer PyTorch avec monitoring
-            monitor_instance = self.monitor if self.display_curves else None
-            self.trainer = PyTorchOnlineTrainer(self.rov, self.network, monitor_instance)
-
-            train = self.get_parameter('load_weights').get_parameter_value().bool_value #Boolean
-
-            if self.rov.current_pose == None:
-                return
-            self.trainer.training = (train)
-
-            """
-            # Demander la cible
-            target_input = input("Enter the first target : x y radian --> ")
-            target = target_input.split()
-            if len(target) != 3:
-                raise ValueError("Need exactly 3 values")
-            for i in range(len(target)):
-                target[i] = float(target[i])
-            """
 
 
+        # Boucle principale d'entraînement
+        continue_running = True
+        session_count = 0
 
-            # Boucle principale d'entraînement
-            continue_running = True
-            session_count = 0
+        while continue_running:
             session_count += 1
             # print(f"\n⚙️ Starting training session #{session_count}")
             self.get_logger().info(f"\n⚙️ Starting training session #{session_count}")
-            # self.get_logger().info("Publish any string to stop the current training")
+            self.get_logger().info("Publish any string to stop the current training")
 
-            self.thread = threading.Thread(target=self.trainer.train, args=(target,))
+            thread = threading.Thread(target=self.trainer.train, args=(target,))
             self.trainer.running = True
-            self.thread.start()
+            thread.start()
             
-            """
-            input_string = self.get_parameter('input_string').value
             try:
-                if input_string != '':
-                    # self.input_string = ''
-                    self.set_parameters([Parameter('input_string', Parameter.Type.STRING, '')])
-                    # input("Press Enter to stop the current training")
+                if self.input_string is not '':
+                # input("Press Enter to stop the current training")
                     self.trainer.running = False
                 
                 thread.join(timeout=5)
@@ -204,13 +194,12 @@ class Controller(Node):
                 monitor.save_results(f"session_{session_count}_{time.strftime('%Y%m%d_%H%M%S')}")
 
             # choice = ''
-            self.get_logger().info("Do you want to continue? (y/n) --> ")
-            while input_string.lower() not in ['y', 'n']:
-                input_string = self.get_parameter('input_string').value
-                self.get_logger().info(f"stored variable: {input_string}")
+            while self.input_string.lower() not in ['y', 'n']:
+                self.get_logger().info("Do you want to continue? (y/n) --> ")
+                self.get_logger().info(f"stored variable: {self.input_string}")
                 # choice = input("Do you want to continue? (y/n) --> ")
 
-            if input_string.lower() == 'y':
+            if self.input_string.lower() == 'y':
                 choice_learning = ''
                 while choice_learning.lower() not in ['y', 'n']:
                     choice_learning = input('Do you want to learn? (y/n) --> ')
@@ -224,27 +213,17 @@ class Controller(Node):
             
             else:
                 continue_running = False
-            """
 
-        if self.input_string == 'stop':
-            self.get_logger().info("Training stopped")
-            self.input_string = ''
-            self.trainer.running = False
-            self.thread.join(timeout=5)
-            if self.display_curves:
-                    # self.monitor.save_results(f"session_{session_count}_{time.strftime('%Y%m%d_%H%M%S')}")
-                    self.monitor.save_results(f"session_1_{time.strftime('%Y%m%d_%H%M%S')}")
-            # Save the weights
-            json_obj = self.network.save_weights_to_json()
-            with open('last_w_torch.json', 'w') as fp:
-                json.dump(json_obj, fp)
+        # Save the weights
+        json_obj = self.network.save_weights_to_json()
+        with open('last_w_torch.json', 'w') as fp:
+            json.dump(json_obj, fp)
 
 
-            if self.display_curves:
-                self.monitor.save_results(f"final_results_{time.strftime('%Y%m%d_%H%M%S')}")
-                self.monitor.stop_monitoring()
-            else:
-                print("⚠️ No results saved, monitoring was disabled")
+        if display_curves:
+            monitor.save_results(f"final_results_{time.strftime('%Y%m%d_%H%M%S')}")
+        else:
+            print("⚠️ No results saved, monitoring was disabled")
 
 rclpy.init()
 node = Controller()

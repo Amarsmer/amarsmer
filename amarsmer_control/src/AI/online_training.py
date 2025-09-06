@@ -70,23 +70,29 @@ class PyTorchOnlineTrainer:
                     command = self.network(input_tensor).tolist()
             
             # Calculer le critère avant de déplacer le robot
-            alpha_x = 1/6
-            alpha_y = 1/6
-            alpha_teta = 1.0/(math.pi)
+            alpha_x = self.alpha[0]
+            alpha_y = self.alpha[1]
+            alpha_teta = self.alpha[2]
             
             crit_av = (alpha_x * alpha_x * (position[0] - target[0])**2 + 
                        alpha_y * alpha_y * (position[1] - target[1])**2 + 
                        alpha_teta * alpha_teta * (position[2] - target[2] - 
                                                  theta_s(position[0], position[1]))**2)
+
+            coeff = 20
             # Appliquer les commandes au robot
-            self.robot.move([command[0],command[1],0,0],
+            self.robot.move([command[0]*coeff,command[1]*coeff,0,0],
                       [0 for i in range(1,5)])
             
             # Attendre un court instant
             time.sleep(0.050)
             
             # Obtenir la nouvelle position du robot
-            position = [self.robot.current_pose[x] for x in [0,1,5]]
+            # position = [self.robot.current_pose[x] for x in [0,1,5]]
+            position = [0, 0, 0]
+            position[0] = self.robot.current_pose[0]
+            position[1] = self.robot.current_pose[1]
+            position[2] = self.robot.current_pose[5]
             
             # Mettre à jour l'entrée du réseau
             network_input[0] = (position[0] - target[0]) * self.alpha[0]
