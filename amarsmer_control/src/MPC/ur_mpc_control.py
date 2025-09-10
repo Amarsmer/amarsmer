@@ -46,24 +46,26 @@ class Controller(Node):
         self.timer = self.create_timer(0.001, self.move)
 
         # MPC Parameters
-        self.mpc_horizon = 1
-        self.mpc_time = 1.2
+        self.mpc_horizon = 2
+        self.mpc_time = 1.0
         self.mpc_path = Path()
-        self.input_bounds = {"lower": np.array([-40.0, -15.0]),
-                             "upper": np.array([40.0, 15.0]),
-                             "idx":   np.array([0, 1])
+        linear_bound = 40.0
+        angular_bound = 15.0
+        self.input_bounds = {"lower": np.array([-linear_bound, -linear_bound,  -angular_bound]),
+                             "upper": np.array([linear_bound, linear_bound, angular_bound]),
+                             "idx":   np.array([0, 1, 2])
                              }
-        self.Q_weight = np.diag([60, # x
-                                 60, # y 
-                                 40, # psi
-                                 10, # u
-                                 10, # u
-                                 10  # r
+        self.Q_weight = np.diag([50, # x
+                                 50, # y 
+                                 30, # psi
+                                 1, # u
+                                 1, # u
+                                 5  # r
                                  ])
 
-        self.R_weight = np.diag([0.1, # X
-                                 0.1, # Y
-                                 0.4  # N
+        self.R_weight = np.diag([0.05, # X
+                                 0.05, # Y
+                                 0.04  # N
                                  ])
 
         # Initialize MPC solver
@@ -79,66 +81,6 @@ class Controller(Node):
         s,ns = self.get_clock().now().seconds_nanoseconds()
         return s + ns*1e-9
 
-    """
-
-    def pose_to_array(self, msg_pose): # Used to convert pose msg to a regular array
-        # Extract position
-        x = msg_pose.position.x
-        y = msg_pose.position.y
-        z = msg_pose.position.z
-
-        # Extract orientation (quaternion)
-        qx = msg_pose.orientation.x
-        qy = msg_pose.orientation.y
-        qz = msg_pose.orientation.z
-        qw = msg_pose.orientation.w
-
-        # Convert quaternion to roll, pitch, yaw
-        rot = R.from_quat([qx, qy, qz, qw])
-        roll, pitch, yaw = rot.as_euler('xyz', degrees=False)
-
-        return [x,y,z,roll,pitch,yaw]
-
-    def odom_callback(self, msg: Odometry):
-        # Extract pose
-        msg_pose = msg.pose.pose
-
-        self.current_pose = self.pose_to_array(msg_pose)
-
-        # Extract twist
-        twist = msg.twist.twist
-        u = twist.linear.x
-        v = twist.linear.y
-        w = twist.linear.z
-
-        p = twist.angular.x
-        q = twist.angular.y
-        r = twist.angular.z
-        
-        self.current_twist = [u,v,w,p,q,r]
-
-        # self.get_logger().info(f"{self.pose}")
-        # self.get_logger().info(f"{self.twist}")
-
-    def create_pose_marker(self, inPose):
-        marker = Marker()
-        marker.header.frame_id = "world"
-        marker.type = Marker.ARROW
-        marker.action = Marker.ADD
-        marker.scale.x = 0.5  # shaft length
-        marker.scale.y = 0.05  # shaft diameter
-        marker.scale.z = 0.05  # head diameter
-        marker.color.a = 1.0
-        marker.color.r = 0.0
-        marker.color.g = 0.0
-        marker.color.b = 1.0
-        marker.pose = inPose
-
-        marker.id = 0
-        marker.lifetime.sec = 0  # persistent
-
-        self.pose_arrow_publisher.publish(marker)
-    """
     def odom_callback(self, msg: Odometry):
         pose, twist = f.odometry(msg)
 
@@ -185,7 +127,7 @@ class Controller(Node):
 
         # Send new request
         request = RequestPath.Request()
-        request.path_request.data = np.linspace(t, t + self.mpc_time, int(self.mpc_horizon) + 1, dtype=float)
+        request.path_request.data = np.linspace(t, t + self.mpc_time, int(self.mpc_horizon), dtype=float)
 
         self.future = self.client.call_async(request)
 

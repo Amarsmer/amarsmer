@@ -52,16 +52,15 @@ def export_underwater_model(
     robot_mass=10.0,
     iz=5.0,
     # Added-mass matrix entries (positive values increase apparent inertia)
-    a_u   = 2.0,    # added mass in surge
-    a_v   = 2.0,    # added mass in sway
-    a_r   = 0.5,    # added inertia in yaw
+    a_u   = 0.,    # added mass in surge
+    a_v   = 0.,    # added mass in sway
+    a_r   = 0.,    # added inertia in yaw
 
     # Linear damping (D). Use positive values; model subtracts D*nu.
-    d_u   = 2.0,    # surge damping
-    d_v   = 2.0,    # sway damping
-    d_r   = 1.0,    # yaw damping
+    d_u   = 0.,    # surge damping
+    d_v   = 0.,    # sway damping
+    d_r   = 0.,    # yaw damping
 ):
-
 
     model = AcadosModel()
     model.name = "ur_robot_model"
@@ -91,8 +90,8 @@ def export_underwater_model(
     U = ca.vertcat(tau_u, tau_v, tau_r)
 
     # Kinematics
-    x_dot   = u * ca.cos(psi) + v * ca.sin(psi)
-    y_dot   = u * ca.sin(psi) - v * ca.cos(psi)
+    x_dot   = u * ca.cos(psi) - v * ca.sin(psi)
+    y_dot   = u * ca.sin(psi) + v * ca.cos(psi)
     psi_dot = r
 
     # Build rigid-body mass and added-mass matrices (2x2 for [u, r])
@@ -117,7 +116,7 @@ def export_underwater_model(
     C = C_rb + C_a 
 
     # Damping matrix D
-    D = ca.DM([[d_u, 0.0, 0.0],
+    D = -ca.DM([[d_u, 0.0, 0.0],
                [0.0, d_v, 0.0],
                [0.0, 0.0, d_r ]])
 
@@ -136,7 +135,7 @@ def export_underwater_model(
     # Solve for nu_dot: M * nu_dot = tau - D*nu - g  =>  nu_dot = M^{-1} * (...)
     # Use casadi inverse (for 2x2 it's fine). If you prefer numerical stability
     # for larger matrices, use ca.solve(M, rhs) instead.
-    nu_dot =  ca.mtimes(ca.inv(M), tau - Cnu + Dnu)
+    nu_dot = ca.solve(M, tau - Cnu - Dnu)
 
     u_ddot = nu_dot[0]
     v_ddot = nu_dot[1]
@@ -148,21 +147,27 @@ def export_underwater_model(
     # Pack model
     model.x = X
     model.xdot = Xdot
+
+    """
     model.u = U
     model.f_expl_expr = xdot
     model.f_impl_expr = Xdot - xdot
+    """
+    model.x = X
+    model.u = U
+    model.f_expl_expr = xdot
 
     return model
 
 class MPCController:
     def __init__(self, robot_mass=10, 
         iz=5, 
-        a_u = 2.0,
-        a_v = 2.0,
-        a_r = 0.5, 
-        d_u = 2.0,
-        d_v = 2.0, 
-        d_r = 1.0, 
+        a_u = 0.,
+        a_v = 0.,
+        a_r = 0., 
+        d_u = 0.,
+        d_v = 0., 
+        d_r = 0., 
         horizon=20, 
         time=2.0,
         Q_weight=None, 
@@ -175,18 +180,22 @@ class MPCController:
         self.T = time
         self.dt = time / horizon
 
-        self.Q = Q_weight if Q_weight is not None else np.diag([10, 10, 10, 1, 1])
-        self.R = R_weight if R_weight is not None else np.diag([0.1, 0.1])
-        self.input_bounds = input_bounds if input_bounds is not None else {
-            "lower": np.array([-5.0, -2.0]),
-            "upper": np.array([5.0, 2.0]),
+        self.Q = Q_weight #if Q_weight is not None else np.diag([10, 10, 10, 1, 1, 1])
+        self.R = R_weight #if R_weight is not None else np.diag([0.1, 0.1, 0.1])
+        self.input_bounds = input_bounds 
+
+        """
+        if input_bounds is not None else {
+            "lower": np.array([-5.0, -5.0, -2.0]),
+            "upper": np.array([5.0, 5.0, 2.0]),
             "idx": np.array([0, 1, 2])
         }
+        """
 
         self.model = export_underwater_model(self.mass, self.iz, a_u, a_v, a_r, d_u, d_v, d_r)
         self.ocp = self._build_ocp()
         self.solver = AcadosOcpSolver(self.ocp, json_file='acados_ocp.json')
-
+    
     def _build_ocp(self):
         model = self.model
         ocp = AcadosOcp()
@@ -217,10 +226,12 @@ class MPCController:
         ocp.constraints.ubu = self.input_bounds["upper"]
         ocp.constraints.idxbu = self.input_bounds["idx"]
 
+        """
         # State constraints (enable x0 via lbx/ubx)
         ocp.constraints.idxbx = np.arange(nx)
         ocp.constraints.lbx = -1e10 * np.ones(nx)
         ocp.constraints.ubx =  1e10 * np.ones(nx)
+        """
 
         # Solver setup
         ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
@@ -230,7 +241,7 @@ class MPCController:
         ocp.solver_options.tf = self.T
 
         return ocp
-
+    
     def update_weights(self, Q_weight=None, R_weight=None):
         if Q_weight is not None:
             self.Q = Q_weight
@@ -247,6 +258,7 @@ class MPCController:
             poses += [poses[-1]] * (self.N + 1 - len(poses))
 
         x_refs, u_refs = [], []
+        
         for i in range(self.N + 1):
             pose = poses[i].pose
             x = pose.position.x
@@ -270,14 +282,26 @@ class MPCController:
                 dpsi = (psi - psi_prev + np.pi) % (2 * np.pi) - np.pi
                 r = dpsi / self.dt
             else:
-                u, v, r = 0.0, 0.0, 0.0
+                u = 0.0
+                v = 0.0
+                r = 0.0
 
             x_refs.append([x, y, psi, u, v, r])
             if i < self.N:
                 u_refs.append([0.0, 0.0, 0.0])
 
+        """
+        self.solver.set(0, 'x', x_current)
         self.solver.set(0, 'lbx', x_current)
         self.solver.set(0, 'ubx', x_current)
+        """
+        self.solver.set(0, 'x', x_current)            # initial guess
+        self.solver.set(0, 'lbx', x_current)          # if you insist on using lbx/ubx,
+        self.solver.set(0, 'ubx', x_current)          # better to do ocp.constraints.x0 instead
+
+        x_refs = np.array(x_refs)  # shape (N+1, nx)
+        u_refs = np.zeros((self.N, 3))  # N x nu
+
         for i in range(self.N):
             yref = np.concatenate((x_refs[i], u_refs[i]))
             self.solver.set(i, 'yref', yref)

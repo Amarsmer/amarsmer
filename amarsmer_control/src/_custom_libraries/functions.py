@@ -88,3 +88,97 @@ def create_pose_marker(inPose, inPub):
     inPub.publish(marker)
 
     # return marker
+
+import numpy as np
+
+def seabed_scanning(t):
+    """
+    Calculate non-differentiated reference positions at a single time t.
+    
+    Parameters
+    ----------
+    t : float
+        Time at which to evaluate the trajectory.
+    
+    Returns
+    -------
+    xr, yr, zr, phir, thetar, psir : float
+        Reference positions and orientations at time t.
+    """
+    velmin = 0.5
+    r = velmin / (np.pi / 4)
+    R = r
+    rr = 1.0
+    pas = 0.25
+
+    # --- Positions ---
+    if t <= 4:
+        xr = velmin * t
+        yr = 0.0
+    elif t <= 6:
+        xr = velmin*4 + r*np.sin((t-4)*np.pi/4)
+        yr = r - r*np.cos((t-4)*np.pi/4)
+    elif t <= 16:
+        xr = r + velmin*4
+        yr = r + velmin*(t-6)
+    elif t <= 20:
+        xr = velmin*4 + 2*r - r*np.cos((t-16)*np.pi/4)
+        yr = r + velmin*10 + r*np.sin((t-16)*np.pi/4)
+    elif t <= 30:
+        xr = 3*r + velmin*4
+        yr = r + velmin*10 - velmin*(t-20)
+    elif t <= 40:
+        xr = 3*r + velmin*4 + (velmin/np.sqrt(3))*(t-30)
+        yr = r + (velmin/np.sqrt(3))*(t-30)
+    elif t <= 40+12*np.pi:
+        xr = 3*r + velmin*4 + 10*velmin/np.sqrt(3) + R*(1 + np.cos(np.pi + rr*velmin*(t-40)))
+        yr = r + 10*velmin/np.sqrt(3) + R*np.sin(np.pi + rr*velmin*(t-40))
+    else:
+        # Default to last known point
+        xr = 3*r + velmin*4 + 10*velmin/np.sqrt(3) - R
+        yr = r + 10*velmin/np.sqrt(3)
+
+    # --- Z position ---
+    if t <= 30:
+        zr = 1.0
+    elif t <= 40:
+        zr = 1.0 + (velmin/np.sqrt(3))*(t-30)
+    elif t <= 40+4*np.pi:
+        zr = 1.0 + 10*velmin/np.sqrt(3)
+    elif t <= 40+12*np.pi:
+        zr = 1.0 + 10*velmin/np.sqrt(3) - pas*velmin*(t-40-4*np.pi)
+    else:
+        zr = 1.0 + 10*velmin/np.sqrt(3) - pas*velmin*8*np.pi  # last known point
+
+    # --- Rotations ---
+    phir = 0.0  # Roll is zero in all phases
+
+    if t <= 30:
+        thetar = 0.0
+    elif t <= 40:
+        thetar = -np.arcsin(1/np.sqrt(3))
+    elif t <= 40+4*np.pi:
+        thetar = -np.pi/6
+    elif t <= 40+12*np.pi:
+        thetar = -np.pi/6 + (np.pi/3)*((t-40-4*np.pi)/(8*np.pi))
+    else:
+        thetar = np.pi/6  # last known
+
+    if t <= 4:
+        psir = 0.0
+    elif t <= 6:
+        psir = (t-4)*np.pi/4
+    elif t <= 16:
+        psir = np.pi/2
+    elif t <= 20:
+        psir = np.pi/2 - (t-16)*np.pi/4
+    elif t <= 30:
+        psir = -np.pi/2
+    elif t <= 40:
+        psir = np.pi/4
+    elif t <= 40+12*np.pi:
+        psir = rr*velmin*(t-40)
+    else:
+        psir = rr*velmin*12*np.pi 
+
+    return xr, yr, zr, phir, thetar, psir
