@@ -24,34 +24,31 @@ class PyTorchOnlineTrainer:
         # État de l'apprentissage
         self.running = False
         self.training = False
-        
+
         # Création de l'optimiseur (remplace partiellement la logique de backpropagate)
         self.optimizer = torch.optim.SGD(self.network.parameters(), lr=0.72, momentum=0)
         
         # Add monitor support
         self.monitor = monitor
         self.last_gradient = [0, 0] if monitor else None
-        
+
+        self.command = []
+
+        self.target = []
+
     def train(self, target):
-        """
-        Procédure d'apprentissage en ligne
-        
-        Args:
-            target (list): position cible [x,y,theta]
-        """
-        
         # Update monitor if available
         if self.monitor:
-            self.monitor.set_target(target)
+            self.monitor.set_target(self.target)
             
         # Obtenir la position actuelle du robot
         position = [self.robot.current_pose[x] for x in [0,1,5]] # x, y, psi
         
         # Calculer l'entrée du réseau (erreur normalisée)
         network_input = [0, 0, 0]
-        network_input[0] = (position[0] - target[0]) * self.alpha[0]
-        network_input[1] = (position[1] - target[1]) * self.alpha[1]
-        network_input[2] = (position[2] - target[2] - theta_s(position[0], position[1])) * self.alpha[2]
+        network_input[0] = (position[0] - self.target[0]) * self.alpha[0]
+        network_input[1] = (position[1] - self.target[1]) * self.alpha[1]
+        network_input[2] = (position[2] - self.target[2] - theta_s(position[0], position[1])) * self.alpha[2]
         
         # Boucle d'apprentissage
         while self.running:
@@ -63,46 +60,46 @@ class PyTorchOnlineTrainer:
             if self.training:
                 # En mode apprentissage, nous voulons les gradients
                 input_tensor.requires_grad_(True)
-                command = self.network(input_tensor).tolist()
+                self.command = self.network(input_tensor).tolist()
             else:
                 # En mode évaluation, pas besoin de gradients
                 with torch.no_grad():
-                    command = self.network(input_tensor).tolist()
+                    self.command = self.network(input_tensor).tolist()
             
             # Calculer le critère avant de déplacer le robot
             alpha_x = self.alpha[0]
             alpha_y = self.alpha[1]
             alpha_teta = self.alpha[2]
             
-            crit_av = (alpha_x * alpha_x * (position[0] - target[0])**2 + 
-                       alpha_y * alpha_y * (position[1] - target[1])**2 + 
-                       alpha_teta * alpha_teta * (position[2] - target[2] - 
+            crit_av = (alpha_x * alpha_x * (position[0] - self.target[0])**2 + 
+                       alpha_y * alpha_y * (position[1] - self.target[1])**2 + 
+                       alpha_teta * alpha_teta * (position[2] - self.target[2] - 
                                                  theta_s(position[0], position[1]))**2)
 
             coeff = 20
             # Appliquer les commandes au robot
-            self.robot.move([command[0]*coeff,command[1]*coeff,0,0],
+            self.robot.move([self.command[0]*coeff,self.command[1]*coeff,0,0],
                       [0 for i in range(1,5)])
             
             # Attendre un court instant
             time.sleep(0.050)
             
             # Obtenir la nouvelle position du robot
-            # position = [self.robot.current_pose[x] for x in [0,1,5]]
-            position = [0, 0, 0]
-            position[0] = self.robot.current_pose[0]
-            position[1] = self.robot.current_pose[1]
-            position[2] = self.robot.current_pose[5]
+            position = [self.robot.current_pose[x] for x in [0,1,5]]
+            # position = [0, 0, 0]
+            # position[0] = self.robot.current_pose[0]
+            # position[1] = self.robot.current_pose[1]
+            # position[2] = self.robot.current_pose[5]
             
             # Mettre à jour l'entrée du réseau
-            network_input[0] = (position[0] - target[0]) * self.alpha[0]
-            network_input[1] = (position[1] - target[1]) * self.alpha[1]
-            network_input[2] = (position[2] - target[2] - theta_s(position[0], position[1])) * self.alpha[2]
+            network_input[0] = (position[0] - self.target[0]) * self.alpha[0]
+            network_input[1] = (position[1] - self.target[1]) * self.alpha[1]
+            network_input[2] = (position[2] - self.target[2] - theta_s(position[0], position[1])) * self.alpha[2]
             
             # Calculer le critère après déplacement
-            crit_ap = (alpha_x * alpha_x * (position[0] - target[0])**2 + 
-                      alpha_y * alpha_y * (position[1] - target[1])**2 + 
-                      alpha_teta * alpha_teta * (position[2] - target[2] - 
+            crit_ap = (alpha_x * alpha_x * (position[0] - self.target[0])**2 + 
+                      alpha_y * alpha_y * (position[1] - self.target[1])**2 + 
+                      alpha_teta * alpha_teta * (position[2] - self.target[2] - 
                                                 theta_s(position[0], position[1]))**2)
             
             # Apprentissage (si activé)
@@ -111,20 +108,20 @@ class PyTorchOnlineTrainer:
                 
                 # Calculer le gradient du critère par rapport aux sorties du réseau
                 grad = [
-                    (-2/delta_t)*(alpha_x*alpha_x*(position[0]-target[0])*delta_t*self.robot.r*math.cos(position[2])
-                    +alpha_y*alpha_y*(position[1]-target[1])*delta_t*self.robot.r*math.sin(position[2])
-                    -alpha_teta*alpha_teta*(position[2]-target[2]-theta_s(position[0], position[1]))*delta_t*self.robot.r/(2*self.robot.R)),
+                    (-2/delta_t)*(alpha_x*alpha_x*(position[0]-self.target[0])*delta_t*self.robot.r*math.cos(position[2])
+                    +alpha_y*alpha_y*(position[1]-self.target[1])*delta_t*self.robot.r*math.sin(position[2])
+                    -alpha_teta*alpha_teta*(position[2]-self.target[2]-theta_s(position[0], position[1]))*delta_t*self.robot.r/(2*self.robot.R)),
 
-                    (-2/delta_t)*(alpha_x*alpha_x*(position[0]-target[0])*delta_t*self.robot.r*math.cos(position[2])
-                    +alpha_y*alpha_y*(position[1]-target[1])*delta_t*self.robot.r*math.sin(position[2])
-                    +alpha_teta*alpha_teta*(position[2]-target[2]-theta_s(position[0], position[1]))*delta_t*self.robot.r/(2*self.robot.R))
+                    (-2/delta_t)*(alpha_x*alpha_x*(position[0]-self.target[0])*delta_t*self.robot.r*math.cos(position[2])
+                    +alpha_y*alpha_y*(position[1]-self.target[1])*delta_t*self.robot.r*math.sin(position[2])
+                    +alpha_teta*alpha_teta*(position[2]-self.target[2]-theta_s(position[0], position[1]))*delta_t*self.robot.r/(2*self.robot.R))
                     ]
                 
                 # Mettre à jour le moniteur avec le gradient actuel
                 if self.monitor:
                     self.monitor.update(
                         position=position,
-                        wheel_speeds=command,
+                        wheel_speeds=self.command,
                         gradient=grad,  # Utiliser le gradient qui vient d'être calculé
                         cost=crit_av
                     )

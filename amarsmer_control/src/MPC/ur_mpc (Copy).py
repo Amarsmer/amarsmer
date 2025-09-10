@@ -15,7 +15,7 @@ def get_yaw_from_quaternion(q):
     return math.atan2(siny_cosp, cosy_cosp)
 
 # Model export
-""" # Old version, does not account for sway, hydrodynamic damping or added masses
+""" # Old version, does not account for hydrodynamic damping or added masses
 def export_underwater_model(robot_mass=10, iz=5):
     model = AcadosModel()
     model.name = "ur_robot_model"
@@ -53,15 +53,23 @@ def export_underwater_model(
     iz=5.0,
     # Added-mass matrix entries (positive values increase apparent inertia)
     a_u   = 2.0,    # added mass in surge
-    a_v   = 2.0,    # added mass in sway
     a_r   = 0.5,    # added inertia in yaw
 
     # Linear damping (D). Use positive values; model subtracts D*nu.
     d_u   = 2.0,    # surge damping
-    d_v   = 2.0,    # sway damping
     d_r   = 1.0,    # yaw damping
 ):
 
+    """
+    3-DOF kinematics (x,y,psi) + 2-DOF dynamics (u,r) with added mass.
+
+    States: x, y, psi, u, r
+    Inputs: tau_u, tau_r
+
+    Equations:
+      M * nu_dot = tau - D*nu - g(eta)
+    where M = M_rb + M_a (2x2), nu = [u, r]^T.
+    """
 
     model = AcadosModel()
     model.name = "ur_robot_model"
@@ -71,79 +79,59 @@ def export_underwater_model(
     y   = ca.SX.sym('y')
     psi = ca.SX.sym('psi')
     u   = ca.SX.sym('u')
-    v   = ca.SX.sym('v')
     r   = ca.SX.sym('r')
-    X   = ca.vertcat(x, y, psi, u, v, r)
+    X   = ca.vertcat(x, y, psi, u, r)
 
     # State derivatives (for implicit form)
     x_dot_sym   = ca.SX.sym('x_dot')
     y_dot_sym   = ca.SX.sym('y_dot')
     psi_dot_sym = ca.SX.sym('psi_dot')
     u_dot_sym   = ca.SX.sym('u_dot')
-    v_dot_sym   = ca.SX.sym('v_dot')
     r_dot_sym   = ca.SX.sym('r_dot')
-    Xdot = ca.vertcat(x_dot_sym, y_dot_sym, psi_dot_sym, u_dot_sym, v_dot_sym, r_dot_sym)
+    Xdot = ca.vertcat(x_dot_sym, y_dot_sym, psi_dot_sym, u_dot_sym, r_dot_sym)
 
     # Controls
     tau_u = ca.SX.sym('tau_u')
-    tau_v = ca.SX.sym('tau_v')
     tau_r = ca.SX.sym('tau_r')
-    U = ca.vertcat(tau_u, tau_v, tau_r)
+    U = ca.vertcat(tau_u, tau_r)
 
-    # Kinematics
-    x_dot   = u * ca.cos(psi) + v * ca.sin(psi)
-    y_dot   = u * ca.sin(psi) - v * ca.cos(psi)
+    # Kinematics (no sway)
+    x_dot   = u * ca.cos(psi)
+    y_dot   = u * ca.sin(psi)
     psi_dot = r
 
     # Build rigid-body mass and added-mass matrices (2x2 for [u, r])
-    M_rb = ca.DM([[robot_mass, 0.0,        0.0],
-                  [0.0,        robot_mass, 0.0],
-                  [0.0,        0.0,        iz ]])
+    M_rb = ca.DM([[robot_mass, 0.0],
+                  [0.0,        iz     ]])
 
-    M_a = ca.DM([[a_u,  0,   0],
-                 [0,    a_v, 0],
-                 [0,    0,   a_r]])
+    M_a = ca.DM([[a_u,  0],
+                 [0, a_r ]])
 
-    M = M_rb + M_a 
+    M = M_rb + M_a    # total mass matrix (2x2)
 
-    C_rb = ca.vertcat(ca.horzcat(0.0,           -robot_mass * r, 0.0),
-                      ca.horzcat(robot_mass * r, 0.0,            0.0),
-                      ca.horzcat(0.0,            0.0,            0.0))
+    # Damping matrix D (2x2)
+    D = ca.DM([[d_u,  0],
+               [0, d_r ]])
 
-    C_a = ca.vertcat(ca.horzcat(0.0 ,       0.0,        a_v * v),
-                     ca.horzcat(0.0,        0.0,       -a_u * u),
-                     ca.horzcat(-a_v * v,   a_u * u,    0.0))
-    
-    C = C_rb + C_a 
-
-    # Damping matrix D
-    D = ca.DM([[d_u, 0.0, 0.0],
-               [0.0, d_v, 0.0],
-               [0.0, 0.0, d_r ]])
-
-    # Velocity vector nu = [u, v, r]
-    nu = ca.vertcat(u, v, r)
+    # Velocity vector nu = [u, r]
+    nu = ca.vertcat(u, r)
 
     # D*nu
     Dnu = ca.mtimes(D, nu)
 
-    # C*nu
-    Cnu = ca.mtimes(C, nu)
-
     # Inputs (tau)
-    tau = ca.vertcat(tau_u, tau_v, tau_r)
+    tau = ca.vertcat(tau_u, tau_r)
 
     # Solve for nu_dot: M * nu_dot = tau - D*nu - g  =>  nu_dot = M^{-1} * (...)
     # Use casadi inverse (for 2x2 it's fine). If you prefer numerical stability
     # for larger matrices, use ca.solve(M, rhs) instead.
-    nu_dot =  ca.mtimes(ca.inv(M), tau - Cnu + Dnu)
+    nu_dot =  ca.mtimes(ca.inv(M), tau + Dnu)
 
     u_ddot = nu_dot[0]
-    v_ddot = nu_dot[1]
-    r_ddot = nu_dot[2]
+    r_ddot = nu_dot[1]
 
     # assemble xdot
-    xdot = ca.vertcat(x_dot, y_dot, psi_dot, u_ddot, v_ddot, r_ddot)
+    xdot = ca.vertcat(x_dot, y_dot, psi_dot, u_ddot, r_ddot)
 
     # Pack model
     model.x = X
@@ -158,10 +146,8 @@ class MPCController:
     def __init__(self, robot_mass=10, 
         iz=5, 
         a_u = 2.0,
-        a_v = 2.0,
         a_r = 0.5, 
         d_u = 2.0,
-        d_v = 2.0, 
         d_r = 1.0, 
         horizon=20, 
         time=2.0,
@@ -180,10 +166,10 @@ class MPCController:
         self.input_bounds = input_bounds if input_bounds is not None else {
             "lower": np.array([-5.0, -2.0]),
             "upper": np.array([5.0, 2.0]),
-            "idx": np.array([0, 1, 2])
+            "idx": np.array([0, 1])
         }
 
-        self.model = export_underwater_model(self.mass, self.iz, a_u, a_v, a_r, d_u, d_v, d_r)
+        self.model = export_underwater_model(self.mass, self.iz, a_u, a_r, d_u, d_r)
         self.ocp = self._build_ocp()
         self.solver = AcadosOcpSolver(self.ocp, json_file='acados_ocp.json')
 
@@ -204,7 +190,7 @@ class MPCController:
         ocp.cost.W[:nx, :nx] = self.Q
         ocp.cost.W[nx:, nx:] = self.R
         ocp.cost.W_e = self.Q
-        ocp.constraints.x0 = np.zeros(6)
+        ocp.constraints.x0 = np.zeros(5)
         ocp.cost.yref = np.zeros(ny)
         ocp.cost.yref_e = np.zeros(nx)
 
@@ -259,22 +245,15 @@ class MPCController:
                 dx = x - prev_pose.position.x
                 dy = y - prev_pose.position.y
                 u = math.hypot(dx, dy) / self.dt
-
                 psi_prev = get_yaw_from_quaternion(prev_pose.orientation)
-
-                psi_mid = (psi + psi_prev) / 2.0
-                dx_b =  math.cos(psi_mid) * dx + math.sin(psi_mid) * dy
-                dy_b = -math.sin(psi_mid) * dx + math.cos(psi_mid) * dy
-                v = dy_b / self.dt 
-
                 dpsi = (psi - psi_prev + np.pi) % (2 * np.pi) - np.pi
                 r = dpsi / self.dt
             else:
-                u, v, r = 0.0, 0.0, 0.0
+                u, r = 0.0, 0.0
 
-            x_refs.append([x, y, psi, u, v, r])
+            x_refs.append([x, y, psi, u, r])
             if i < self.N:
-                u_refs.append([0.0, 0.0, 0.0])
+                u_refs.append([0.0, 0.0])
 
         self.solver.set(0, 'lbx', x_current)
         self.solver.set(0, 'ubx', x_current)

@@ -53,15 +53,17 @@ class Controller(Node):
                              "upper": np.array([40.0, 15.0]),
                              "idx":   np.array([0, 1])
                              }
-        self.Q_weight = np.diag([50, # x
-                                 50, # y 
-                                 50, # psi
-                                 20, # u
-                                 20  # r
+        self.Q_weight = np.diag([60, # x
+                                 60, # y 
+                                 40, # psi
+                                 10, # u
+                                 10, # u
+                                 10  # r
                                  ])
 
         self.R_weight = np.diag([0.1, # X
-                                 0.5  # N
+                                 0.1, # Y
+                                 0.4  # N
                                  ])
 
         # Initialize MPC solver
@@ -151,8 +153,10 @@ class Controller(Node):
             self.controller = ur_mpc.MPCController(robot_mass = self.rov.mass,
                                             iz = self.rov.inertia[-1], 
                                             a_u = self.rov.added_masses[0],
+                                            a_v = self.rov.added_masses[1],
                                             a_r = self.rov.added_masses[5],
                                             d_u = self.rov.viscous_drag[0],
+                                            d_v = self.rov.viscous_drag[1],
                                             d_r = self.rov.viscous_drag[5],
                                             horizon = self.mpc_horizon, 
                                             time = self.mpc_time, 
@@ -186,13 +190,14 @@ class Controller(Node):
         self.future = self.client.call_async(request)
 
         # MPC control
-        tau = np.zeros(2)
+        tau = np.zeros(3)
 
         if self.rov.current_pose is not None and self.rov.current_twist is not None:
             x_current = np.array([self.rov.current_pose[0], # x
                                   self.rov.current_pose[1], # y
                                   self.rov.current_pose[5], # yaw
                                   self.rov.current_twist[0], # u
+                                  self.rov.current_twist[1], # v
                                   self.rov.current_twist[5]]) # r
 
         x_current = np.array(x_current).reshape(-1)
@@ -209,13 +214,15 @@ class Controller(Node):
         cylinder_r = 0.15
 
         # Define thrust allocation matrix and use it to apply tau on thrusters
-        B = np.array([[1        ,1],
+        B = np.array([[1.        ,1.],
+                      [0.        ,0.],
                      [cylinder_r,-cylinder_r]]) # Note that the current frame is NOT NED so the y and z axis are reversed
-        u = np.linalg.inv(B) @ tau
+        u = np.linalg.pinv(B) @ tau
 
         # give thruster forces and joint angles
         self.rov.move([u[0],u[1],0,0],
                       [0 for i in range(1,5)])
+
         '''
         # Update and save monitoring metrics to be graphed later
         if self.mpc_path.poses:

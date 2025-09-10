@@ -58,20 +58,20 @@ class PathGeneration(Node):
         yaw = 0
         """
 
-        """
+        
         # Sin line
         a = 2
         f = 0.1
         vx = 0.3
 
         x = vx*t
-        y = 2.0 + a * np.sin(f*t)
+        y = 0.0 + a * np.sin(f*t)
         z = 0.0
 
         dx = vx
         dy = a * f * np.cos(f*t)
         yaw = np.arctan2(dy, dx)
-        """
+        
 
         """
         # Square wave
@@ -97,7 +97,7 @@ class PathGeneration(Node):
         dy = y_fwd - y
         yaw = math.atan2(dy, dx)
         """
-        
+        """
         # Kinematic square wave
 
         segment_length = 6.0
@@ -137,7 +137,7 @@ class PathGeneration(Node):
         # Move along current segment
         x += dx * surge_speed * t_in_segment
         y += dy * surge_speed * t_in_segment
-        
+        """
 
         # Create and return pose
 

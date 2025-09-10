@@ -10,7 +10,7 @@ find_package(rosidl_default_generators REQUIRED)
 
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
-install(PROGRAMS src/AI/AI_run.py
+install(PROGRAMS src/AI/AI_train_run.py
         DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS src/AI/online_training.py
         DESTINATION lib/${PROJECT_NAME})

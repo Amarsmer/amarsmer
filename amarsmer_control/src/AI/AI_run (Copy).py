@@ -120,26 +120,13 @@ class Controller(Node):
             # Initialize the robot
             self.monitor = RobotMonitorAdapter(world_bounds=self.WORLD_BOUNDS)
 
-            '''
-            # Register cleanup function to ensure simulation is stopped
-            def cleanup():
-                print("Cleaning up and stopping simulation...")
-                if hasattr(robot, 'cleanup'):
-                    robot.cleanup()
-                if hasattr(monitor, 'stop_monitoring'):
-                    monitor.stop_monitoring()
-            atexit.register(cleanup)
-            '''
-
-            # Wait a moment to ensure the simulation is fully started
-            time.sleep(1)
-
             # Ask for display preference
             self.display_curves= self.get_parameter('display').get_parameter_value().bool_value
             # self.get_logger().info(f"stored display bool: {self.display_curves}")
 
             if self.display_curves:
                 self.monitor.start_monitoring()
+                time.sleep(1)
 
             # Chargement de poids existants
             if self.get_parameter('load_weights').get_parameter_value().bool_value:
@@ -157,18 +144,6 @@ class Controller(Node):
             if self.rov.current_pose == None:
                 return
             self.trainer.training = (train)
-
-            """
-            # Demander la cible
-            target_input = input("Enter the first target : x y radian --> ")
-            target = target_input.split()
-            if len(target) != 3:
-                raise ValueError("Need exactly 3 values")
-            for i in range(len(target)):
-                target[i] = float(target[i])
-            """
-
-
 
             # Boucle principale d'entraînement
             continue_running = True
@@ -227,13 +202,12 @@ class Controller(Node):
             """
 
         if self.input_string == 'stop':
-            self.get_logger().info("Training stopped")
             self.input_string = ''
             self.trainer.running = False
             self.thread.join(timeout=5)
             if self.display_curves:
-                    # self.monitor.save_results(f"session_{session_count}_{time.strftime('%Y%m%d_%H%M%S')}")
-                    self.monitor.save_results(f"session_1_{time.strftime('%Y%m%d_%H%M%S')}")
+                # self.monitor.save_results(f"session_{session_count}_{time.strftime('%Y%m%d_%H%M%S')}")
+                self.monitor.save_results(f"session_1_{time.strftime('%Y%m%d_%H%M%S')}")
             # Save the weights
             json_obj = self.network.save_weights_to_json()
             with open('last_w_torch.json', 'w') as fp:
@@ -245,6 +219,7 @@ class Controller(Node):
                 self.monitor.stop_monitoring()
             else:
                 print("⚠️ No results saved, monitoring was disabled")
+            self.get_logger().info("Training stopped")
 
 rclpy.init()
 node = Controller()
