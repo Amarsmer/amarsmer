@@ -47,7 +47,7 @@ class Controller(Node):
         self.declare_parameter('load_weights', False)
         self.declare_parameter('train', True)
         self.declare_parameter('continue_running', True)
-        self.declare_parameter('target', '0 0 0')
+        self.declare_parameter('target', '0 0 0 0 0 0')
         self.declare_parameter('input_string', '')
         self.input_string = ''
 
@@ -72,12 +72,23 @@ class Controller(Node):
         # Définir les dimensions du monde pour le monitoring
         self.WORLD_BOUNDS = (-10, 10, -10, 10)  # x_min, x_max, y_min, y_max
 
-        self.R = 0.15  # demi-distance entre les propulseurs
-
         # Configuration de base
-        HL_size = 10
-        input_size = 3
+        HL_size = 50
+        input_size = 6
         output_size = 2
+
+        self.Q_weight = np.diag([50, # x
+                                 50, # y 
+                                 30, # psi
+                                 5, # u
+                                 5, # v
+                                 10  # r
+                                 ])
+
+        self.R_weight = np.diag([0.05, # X
+                                 0.05, # Y
+                                 0.1   # N
+                                 ])
 
         # Création du réseau PyTorch
         self.network = NN(input_size, HL_size, output_size)
@@ -87,7 +98,6 @@ class Controller(Node):
 
         self.monitoring = []
         self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2','t'])
-        # self.run()
 
         self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
 
@@ -142,7 +152,7 @@ class Controller(Node):
 
             # Initialiser le trainer PyTorch avec monitoring
             # monitor_instance = self.monitor if self.display_curves else None
-            self.trainer = PyTorchOnlineTrainer(self.rov, self.network, None)
+            self.trainer = PyTorchOnlineTrainer(self.rov, self.network, None, self.Q_weight, self.R_weight)
 
             train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
 
@@ -206,8 +216,10 @@ class Controller(Node):
                 continue_running = False
             """
 
+        
+        self.get_logger().info(f"Grad: {self.trainer.gradient_flag}")
         ### Save data for monitoring
-        if self.trainer.command:
+        if self.trainer.command_set:
             x_m = self.rov.current_pose[0]
             y_m = self.rov.current_pose[1]
             psi_m = self.rov.current_pose[5]

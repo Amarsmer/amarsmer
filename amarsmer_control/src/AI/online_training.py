@@ -9,7 +9,7 @@ def theta_s(x, y):
     return math.tanh(10.*x)*math.atan(1.*y)
 
 class PyTorchOnlineTrainer:
-    def __init__(self, robot, nn_model, monitor=None):
+    def __init__(self, robot, nn_model, monitor=None, Q=np.eye(6), R=np.eye(3)):
         """
         Args:
             robot (Robot): instance du robot suivant le modèle de ZMQPioneerSimulation
@@ -20,6 +20,8 @@ class PyTorchOnlineTrainer:
 
         # Facteurs de normalisation 
         self.alpha = [1/6, 1/6, 1/(math.pi)]
+        self.Q = Q
+        self.R = R
         
         # État de l'apprentissage
         self.running = False
@@ -36,19 +38,37 @@ class PyTorchOnlineTrainer:
 
         self.target = []
 
+        self.r = 0.15
+
+        self.B = np.array([[1.        ,1.],
+                      [0.        ,0.],
+                     [self.r,-self.r]]) 
+
+        self.command_set = False
+        self.gradient_flag = None
     def train(self, target):
         # Update monitor if available
         if self.monitor:
             self.monitor.set_target(self.target)
             
-        # Obtenir la position actuelle du robot
-        position = [self.robot.current_pose[x] for x in [0,1,5]] # x, y, psi
+        # Extract position and speed as column vectors
+        position = np.array([self.robot.current_pose[x] for x in [0, 1, 5]]).reshape(-1, 1)
+        speed = np.array([self.robot.current_twist[x] for x in [0, 1, 5]]).reshape(-1, 1)
+
+        # Concatenate vertically (stack columns)
+        state = np.vstack([position, speed])
+
+        # Compute error as a column vector
+        error = state - np.array(target).reshape(-1, 1)
         
         # Calculer l'entrée du réseau (erreur normalisée)
-        network_input = [0, 0, 0]
-        network_input[0] = (position[0] - self.target[0]) * self.alpha[0]
-        network_input[1] = (position[1] - self.target[1]) * self.alpha[1]
-        network_input[2] = (position[2] - self.target[2] - theta_s(position[0], position[1])) * self.alpha[2]
+        network_input = np.zeros(6)
+        network_input[0] = (error[0])
+        network_input[1] = (error[1])
+        network_input[2] = (error[2] - theta_s(state[0], state[1]))
+        network_input[3] = (error[3])
+        network_input[4] = (error[4])
+        network_input[5] = (error[5])
         
         # Boucle d'apprentissage
         while self.running:
@@ -66,7 +86,11 @@ class PyTorchOnlineTrainer:
                 with torch.no_grad():
                     self.command = self.network(input_tensor).tolist()
             
+            if not self.command_set:
+                self.command_set = True
+            
             # Calculer le critère avant de déplacer le robot
+            """
             alpha_x = self.alpha[0]
             alpha_y = self.alpha[1]
             alpha_teta = self.alpha[2]
@@ -75,37 +99,72 @@ class PyTorchOnlineTrainer:
                        alpha_y * alpha_y * (position[1] - self.target[1])**2 + 
                        alpha_teta * alpha_teta * (position[2] - self.target[2] - 
                                                  theta_s(position[0], position[1]))**2)
-
-            coeff = 20
+            """
+            self.command = np.array(self.command).reshape(-1, 1)
+            tau = self.B @ self.command
+            crit_av = error.transpose() @ self.Q @ error + tau.transpose() @ self.R @ tau
+            coeff = 10
             # Appliquer les commandes au robot
-            self.robot.move([self.command[0]*coeff,self.command[1]*coeff,0,0],
+            self.robot.move([self.command[1]*coeff,self.command[0]*coeff,0,0],
                       [0 for i in range(1,5)])
             
             # Attendre un court instant
             time.sleep(0.050)
-            
-            # Obtenir la nouvelle position du robot
-            position = [self.robot.current_pose[x] for x in [0,1,5]]
-            # position = [0, 0, 0]
-            # position[0] = self.robot.current_pose[0]
-            # position[1] = self.robot.current_pose[1]
-            # position[2] = self.robot.current_pose[5]
+
+            # Extract position and speed as column vectors
+            position = np.array([self.robot.current_pose[x] for x in [0, 1, 5]]).reshape(-1, 1)
+            speed = np.array([self.robot.current_twist[x] for x in [0, 1, 5]]).reshape(-1, 1)
+
+            # Concatenate vertically (stack columns)
+            state = np.vstack([position, speed])
+
+            # Compute error as a column vector
+            error = state - np.array(target).reshape(-1, 1)
             
             # Mettre à jour l'entrée du réseau
-            network_input[0] = (position[0] - self.target[0]) * self.alpha[0]
-            network_input[1] = (position[1] - self.target[1]) * self.alpha[1]
-            network_input[2] = (position[2] - self.target[2] - theta_s(position[0], position[1])) * self.alpha[2]
+            network_input[0] = (error[0])
+            network_input[1] = (error[1])
+            network_input[2] = (error[2] - theta_s(state[0], state[1]))
+            network_input[3] = (error[3])
+            network_input[4] = (error[4])
+            network_input[5] = (error[5])
             
+            """
             # Calculer le critère après déplacement
             crit_ap = (alpha_x * alpha_x * (position[0] - self.target[0])**2 + 
                       alpha_y * alpha_y * (position[1] - self.target[1])**2 + 
                       alpha_teta * alpha_teta * (position[2] - self.target[2] - 
                                                 theta_s(position[0], position[1]))**2)
-            
+            """
+            crit_ap = error.transpose() @ self.Q @ error + tau.transpose() @ self.R @ tau
             # Apprentissage (si activé)
             if self.training:
                 delta_t = (time.time() - debut)
+                m = self.robot.mass
+                Xudot = self.robot.added_masses[0]
+                Nrdot = self.robot.added_masses[5]
+                Iz = self.robot.inertia[-1]
+
+                grad_xk = np.array([[0.                  , 0.               ],
+                                    [0.                  , 0.               ],
+                                    [0.                  , 0.               ],
+                                    [1/(m+Xudot)         , 1/(m+Xudot)      ],
+                                    [0.                  , 0.               ],
+                                    [self.r/(Iz + Nrdot), -self.r/(Iz+Nrdot)]])
                 
+                grad_u = np.eye(2)
+
+                w_tau = self.R @ tau
+                u = np.linalg.pinv(self.B) @ w_tau
+
+                gradxJ = 2 * (self.Q @ error)
+                graduJ = 2 * (u)
+
+                grad = delta_t * (grad_xk.transpose() @ gradxJ + grad_u @ graduJ)
+                grad = grad.squeeze(-1)
+
+                self.gradient_flag = grad
+                """
                 # Calculer le gradient du critère par rapport aux sorties du réseau
                 grad = [
                     (-2/delta_t)*(alpha_x*alpha_x*(position[0]-self.target[0])*delta_t*self.robot.r*math.cos(position[2])
@@ -116,7 +175,7 @@ class PyTorchOnlineTrainer:
                     +alpha_y*alpha_y*(position[1]-self.target[1])*delta_t*self.robot.r*math.sin(position[2])
                     +alpha_teta*alpha_teta*(position[2]-self.target[2]-theta_s(position[0], position[1]))*delta_t*self.robot.r/(2*self.robot.R))
                     ]
-                
+                """
                 # Mettre à jour le moniteur avec le gradient actuel
                 if self.monitor:
                     self.monitor.update(
