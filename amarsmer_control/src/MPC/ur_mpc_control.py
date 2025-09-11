@@ -46,8 +46,8 @@ class Controller(Node):
         self.timer = self.create_timer(0.001, self.move)
 
         # MPC Parameters
-        self.mpc_horizon = 2
-        self.mpc_time = 1.0
+        self.mpc_horizon = 10
+        self.mpc_time = 2.0
         self.mpc_path = Path()
         linear_bound = 40.0
         angular_bound = 15.0
@@ -58,14 +58,14 @@ class Controller(Node):
         self.Q_weight = np.diag([50, # x
                                  50, # y 
                                  30, # psi
-                                 1, # u
-                                 1, # u
-                                 5  # r
+                                 5, # u
+                                 5, # u
+                                 10  # r
                                  ])
 
         self.R_weight = np.diag([0.05, # X
                                  0.05, # Y
-                                 0.04  # N
+                                 0.1   # N
                                  ])
 
         # Initialize MPC solver
@@ -76,6 +76,9 @@ class Controller(Node):
         self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2','t'])
 
         self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
+        self.title = 'data/MPC_data/' + self.date +'-mpc_data'
+
+        self.t_record = self.get_time()
 
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
@@ -165,12 +168,12 @@ class Controller(Node):
         self.rov.move([u[0],u[1],0,0],
                       [0 for i in range(1,5)])
 
-        '''
+        
         # Update and save monitoring metrics to be graphed later
         if self.mpc_path.poses:
-            x_m = self.current_pose[0]
-            y_m = self.current_pose[1]
-            psi_m = self.current_pose[5]
+            x_m = self.rov.current_pose[0]
+            y_m = self.rov.current_pose[1]
+            psi_m = self.rov.current_pose[5]
 
             x_d_m = desired_pose.position.x
             y_d_m = desired_pose.position.y
@@ -181,9 +184,11 @@ class Controller(Node):
             psi_d_m = math.atan2(siny_cosp, cosy_cosp)
 
             self.monitoring.append([x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t])
-            title = self.date +'-mpc_data'
-            np.save(title, self.monitoring)
-        '''
+
+            if (t - self.t_record) > 1:
+                self.t_record = t
+                np.save(self.title, self.monitoring)
+        
 
 rclpy.init()
 node = Controller()

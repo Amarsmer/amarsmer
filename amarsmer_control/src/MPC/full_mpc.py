@@ -1,6 +1,6 @@
 # Remove syntax warnings from acados
-# import warnings
-# warnings.filterwarnings("ignore", category=SyntaxWarning)
+import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 # Regular imports
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
@@ -145,8 +145,6 @@ class MPCController:
             ca.horzcat(0, ca.cos(phi), -ca.sin(phi)),
             ca.horzcat(0, ca.sin(phi),  ca.cos(phi)))
 
-        # J_1 = Rz @ Ry @ Rx 
-
         J_1 = ca.mtimes(Rz,ca.mtimes(Ry, Rx))
 
         J_2 = ca.vertcat(
@@ -232,7 +230,7 @@ class MPCController:
         Dnu = ca.mtimes(D, nu)
         Cnu = ca.mtimes(C, nu)
 
-        nu_dot = ca.mtimes(ca.inv(M), (tau - (Cnu + Dnu + G)))
+        nu_dot = ca.solve(M, (tau - (Cnu + Dnu + G)))
         x_dot = ca.vertcat(eta_dot, nu_dot)
 
         model.x = states

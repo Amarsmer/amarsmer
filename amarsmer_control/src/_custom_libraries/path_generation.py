@@ -61,7 +61,7 @@ class PathGeneration(Node):
             # Sin line
             a = 3
             f = 0.1
-            vx = 0.3
+            vx = 0.5
 
             x = vx*t
             y = 0.0 + a * np.sin(f*t)

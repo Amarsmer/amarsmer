@@ -7,6 +7,7 @@ def generate_launch_description():
     sl.declare_arg('gui', default_value=True)
     sl.declare_arg('spawn', default_value=True)
     sl.declare_arg('thr','thrusters_plasmar2')
+    sl.declare_arg('spawn_pose', default_value = "0.0 0.0 0.0 0.0 0.0 0.0")
 
     with sl.group(if_arg='gui'):
         sl.gz_launch(sl.find('amarsmer_description', 'world.sdf'), "-r")
@@ -19,9 +20,12 @@ def generate_launch_description():
                             GazeboBridge.ros2gz)]
         
     sl.create_gz_bridge(bridges)
-
+    """
     with sl.group(if_arg='spawn'):
         sl.include('amarsmer_description', 'upload_rov_launch.py',
                    launch_arguments=sl.arg_map('thr'))
-        
+    """
+    with sl.group(if_arg='spawn'):
+        sl.include('amarsmer_description', 'upload_rov_launch.py',
+                   launch_arguments={'thr': sl.arg('thr'), 'spawn_pose': sl.arg('spawn_pose')})
     return sl.launch_description()
