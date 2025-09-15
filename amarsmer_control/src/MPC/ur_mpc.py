@@ -99,7 +99,7 @@ def export_underwater_model(
                   [0.0,        robot_mass, 0.0],
                   [0.0,        0.0,        iz ]])
 
-    M_a = ca.DM([[a_u,  0,   0],
+    M_a = -ca.DM([[a_u,  0,   0],
                  [0,    a_v, 0],
                  [0,    0,   a_r]])
 

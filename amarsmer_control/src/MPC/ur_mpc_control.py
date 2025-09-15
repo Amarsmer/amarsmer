@@ -47,7 +47,7 @@ class Controller(Node):
 
         # MPC Parameters
         self.mpc_horizon = 10
-        self.mpc_time = 2.0
+        self.mpc_time = 0.5
         self.mpc_path = Path()
         linear_bound = 40.0
         angular_bound = 15.0
@@ -57,15 +57,15 @@ class Controller(Node):
                              }
         self.Q_weight = np.diag([50, # x
                                  50, # y 
-                                 30, # psi
-                                 5, # u
-                                 5, # u
-                                 10  # r
+                                 40, # psi
+                                 1, # u
+                                 1, # v
+                                 1  # r
                                  ])
-
-        self.R_weight = np.diag([0.05, # X
-                                 0.05, # Y
-                                 0.1   # N
+        
+        self.R_weight = np.diag([0.03, # X
+                                 0.03, # Y
+                                 0.03   # N
                                  ])
 
         # Initialize MPC solver

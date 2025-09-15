@@ -28,7 +28,7 @@ class PyTorchOnlineTrainer:
         self.training = False
 
         # Création de l'optimiseur (remplace partiellement la logique de backpropagate)
-        self.optimizer = torch.optim.SGD(self.network.parameters(), lr=2*1e-2, momentum=0)
+        self.optimizer = torch.optim.SGD(self.network.parameters(), lr=0.72, momentum=0)
         
         # Add monitor support
         self.monitor = monitor
@@ -63,9 +63,9 @@ class PyTorchOnlineTrainer:
         
         # Calculer l'entrée du réseau (erreur normalisée)
         network_input = np.zeros(6)
-        network_input[0] = (error[0]) /10
-        network_input[1] = (error[1]) /10
-        network_input[2] = (error[2] - theta_s(state[0], state[1])) / np.pi
+        network_input[0] = (error[0])
+        network_input[1] = (error[1])
+        network_input[2] = (error[2] - theta_s(state[0], state[1]))
         network_input[3] = (error[3])
         network_input[4] = (error[4])
         network_input[5] = (error[5])
@@ -122,9 +122,9 @@ class PyTorchOnlineTrainer:
             error = state - np.array(target).reshape(-1, 1)
             
             # Mettre à jour l'entrée du réseau
-            network_input[0] = (error[0]) /10
-            network_input[1] = (error[1]) /10
-            network_input[2] = (error[2] - theta_s(state[0], state[1])) /np.pi
+            network_input[0] = (error[0])
+            network_input[1] = (error[1])
+            network_input[2] = (error[2] - theta_s(state[0], state[1]))
             network_input[3] = (error[3])
             network_input[4] = (error[4])
             network_input[5] = (error[5])
@@ -148,7 +148,7 @@ class PyTorchOnlineTrainer:
                 grad_xk = np.array([[0.                  , 0.               ],
                                     [0.                  , 0.               ],
                                     [0.                  , 0.               ],
-                                    [1/(m-Xudot)         , 1/(m-Xudot)      ],
+                                    [1/(m+Xudot)         , 1/(m+Xudot)      ],
                                     [0.                  , 0.               ],
                                     [self.r/(Iz + Nrdot), -self.r/(Iz+Nrdot)]])
                 
@@ -229,7 +229,7 @@ class PyTorchOnlineTrainer:
         
         # Rétropropager le gradient directement
         # C'est ici que nous connectons notre gradient externe au graphe PyTorch
-        outputs.backward(gradient=grad_tensor)
+        outputs.backward(gradient=-grad_tensor)
         
         # Mise à jour des poids
         for param in self.network.parameters():

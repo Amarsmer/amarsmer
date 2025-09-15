@@ -73,22 +73,28 @@ class Controller(Node):
         self.WORLD_BOUNDS = (-10, 10, -10, 10)  # x_min, x_max, y_min, y_max
 
         # Configuration de base
-        HL_size = 50
+        HL_size = 2000
         input_size = 6
         output_size = 2
 
         self.Q_weight = np.diag([50, # x
                                  50, # y 
-                                 30, # psi
-                                 5, # u
-                                 5, # v
-                                 10  # r
+                                 40, # psi
+                                 1, # u
+                                 1, # v
+                                 1  # r
                                  ])
-
-        self.R_weight = np.diag([0.05, # X
-                                 0.05, # Y
+        
+        self.R_weight = np.diag([0.03, # X
+                                 0.03, # Y
+                                 0.03   # N
+                                 ])
+        """
+        self.R_weight = np.diag([5, # X
+                                 5, # Y
                                  0.1   # N
                                  ])
+        """
 
         # Création du réseau PyTorch
         self.network = NN(input_size, HL_size, output_size)
@@ -217,7 +223,7 @@ class Controller(Node):
             """
 
         
-        self.get_logger().info(f"Grad: {self.trainer.gradient_flag}")
+        # self.get_logger().info(f"Grad: {self.trainer.gradient_flag}")
         ### Save data for monitoring
         if self.trainer.command_set:
             x_m = self.rov.current_pose[0]
