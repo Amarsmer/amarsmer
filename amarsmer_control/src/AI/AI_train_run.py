@@ -73,7 +73,7 @@ class Controller(Node):
         self.WORLD_BOUNDS = (-10, 10, -10, 10)  # x_min, x_max, y_min, y_max
 
         # Configuration de base
-        HL_size = 2000
+        HL_size = 800
         input_size = 6
         output_size = 2
 
@@ -149,35 +149,35 @@ class Controller(Node):
             #     self.monitor.start_monitoring()
             #     time.sleep(1)
 
-            # Chargement de poids existants
+            # Weight loading
             if self.get_parameter('load_weights').get_parameter_value().bool_value:
                 with open('last_w_torch.json') as fp:
                     json_obj = json.load(fp)
                 self.network.load_weights_from_json(json_obj, HL_size)
                 
 
-            # Initialiser le trainer PyTorch avec monitoring
+            # Init PyTorch trainer with monitoring
             # monitor_instance = self.monitor if self.display_curves else None
             self.trainer = PyTorchOnlineTrainer(self.rov, self.network, None, self.Q_weight, self.R_weight)
 
             train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
 
-            if self.rov.current_pose == None:
+            if self.rov.current_pose == None: # Make sure the robot sim is loaded, possibly redundant with rov.ready()
                 return
             self.trainer.training = (train)
 
-            # Boucle principale d'entraînement
+            # Main training loop, currently runs only once
             continue_running = True
             session_count = 0
             session_count += 1
-            # print(f"\n⚙️ Starting training session #{session_count}")
+
             self.get_logger().info(f"\n⚙️ Starting training session #{session_count}")
-            # self.get_logger().info("Publish any string to stop the current training")
 
             self.thread = threading.Thread(target=self.trainer.train, args=(target,))
             self.trainer.running = True
             self.thread.start()
             
+            #TODO: add flexibility to run multiple training sessions
             """
             input_string = self.get_parameter('input_string').value
             try:
@@ -223,9 +223,10 @@ class Controller(Node):
             """
 
         
-        # self.get_logger().info(f"Grad: {self.trainer.gradient_flag}")
+        # self.get_logger().info(f"Grad: {self.trainer.gradient_flag}") # Print gradient for debugging purposes
+
         ### Save data for monitoring
-        if self.trainer.command_set:
+        if self.trainer.command_set: # Make sure the training has started
             x_m = self.rov.current_pose[0]
             y_m = self.rov.current_pose[1]
             psi_m = self.rov.current_pose[5]
@@ -240,7 +241,7 @@ class Controller(Node):
 
             self.monitoring.append([x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t])
 
-        if self.input_string == 'stop':
+        if self.input_string == 'stop': # Stop training session from terminal
             self.input_string = ''
             self.trainer.running = False
             self.thread.join(timeout=5)
