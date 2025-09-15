@@ -7,9 +7,7 @@ import rclpy
 
 # Common python libraries
 import time
-import math
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 from datetime import datetime
 
 # ROS2 msg libraries
@@ -19,23 +17,20 @@ from geometry_msgs.msg import PoseStamped, Pose, Twist, Point, Quaternion, Vecto
 from visualization_msgs.msg import Marker
 
 # Custom libraries
-from urdf_parser_py import urdf
-from hydrodynamic_model import hydrodynamic
-import ur_mpc
 from amarsmer_control import ROV
-from amarsmer_interfaces.srv import RequestPath
 import functions as f
 
-import torch
-import json
-import threading
-import atexit
-import time
-# from robot_sim import ZMQPioneerSimulation
+# Training specific custom librairies
 from amarsmer_control import ROV
 from backprop import NN
 from online_training import PyTorchOnlineTrainer
 from monitoring import RobotMonitorAdapter
+
+# Training specific librairies
+import torch
+import json
+import threading
+import atexit
 
 class Controller(Node):
     def __init__(self):
@@ -48,7 +43,6 @@ class Controller(Node):
         self.declare_parameter('train', True)
         self.declare_parameter('continue_running', True)
         self.declare_parameter('target', '0 0 0 0 0 0')
-        self.declare_parameter('input_string', '')
         self.input_string = ''
 
         self.rov = ROV(self, thrust_visual = True)
@@ -56,13 +50,7 @@ class Controller(Node):
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
         self.str_input_subscriber = self.create_subscription(String, '/amarsmer/input_str', self.str_input_callback, 10)
         self.pose_arrow_publisher = self.create_publisher(Marker, "/pose_arrow", 10)
-        """
-        # Create a client for path request
-        self.client = self.create_client(RequestPath, '/path_request')
 
-        while not self.client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Waiting for service...")
-        """
         self.future = None # Used for client requests
 
         self.timer = self.create_timer(0.1, self.run)
@@ -89,19 +77,14 @@ class Controller(Node):
                                  0.03, # Y
                                  0.03   # N
                                  ])
-        """
-        self.R_weight = np.diag([5, # X
-                                 5, # Y
-                                 0.1   # N
-                                 ])
-        """
 
-        # Création du réseau PyTorch
+        # Create pytorch network
         self.network = NN(input_size, HL_size, output_size)
 
         self.trainer = None
         self.training_initiated = False
 
+        # Initiate monitoring data
         self.monitoring = []
         self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2','t'])
 
@@ -173,9 +156,9 @@ class Controller(Node):
 
             self.get_logger().info(f"\n⚙️ Starting training session #{session_count}")
 
-            self.thread = threading.Thread(target=self.trainer.train, args=(target,))
+            self.training_thread = threading.Thread(target=self.trainer.train, args=(target,)) # Start training process on a separate thread
             self.trainer.running = True
-            self.thread.start()
+            self.training_thread.start()
             
             #TODO: add flexibility to run multiple training sessions
             """
@@ -187,14 +170,14 @@ class Controller(Node):
                     # input("Press Enter to stop the current training")
                     self.trainer.running = False
                 
-                thread.join(timeout=5)
-                if thread.is_alive():
+                training_thread.join(timeout=5)
+                if training_thread.is_alive():
                     print("⚠️ Training thread did not finish in time, continuing anyway")
                     
             except KeyboardInterrupt:
                 print("\nKeyboard interrupt detected. Stopping training...")
                 self.trainer.running = False
-                thread.join(timeout=5)
+                training_thread.join(timeout=5)
 
             if display_curves:
                 monitor.save_results(f"session_{session_count}_{time.strftime('%Y%m%d_%H%M%S')}")
@@ -244,7 +227,7 @@ class Controller(Node):
         if self.input_string == 'stop': # Stop training session from terminal
             self.input_string = ''
             self.trainer.running = False
-            self.thread.join(timeout=5)
+            self.training_thread.join(timeout=5)
             # if self.display_curves:
             #     # self.monitor.save_results(f"session_{session_count}_{time.strftime('%Y%m%d_%H%M%S')}")
             #     self.monitor.save_results(f"session_1_{time.strftime('%Y%m%d_%H%M%S')}")
