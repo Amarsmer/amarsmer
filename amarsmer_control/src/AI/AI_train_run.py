@@ -51,6 +51,8 @@ class Controller(Node):
         self.str_input_subscriber = self.create_subscription(String, '/amarsmer/input_str', self.str_input_callback, 10)
         self.pose_arrow_publisher = self.create_publisher(Marker, "/pose_arrow", 10)
 
+        self.data_publisher = self.create_publisher(Float32MultiArray, "/monitoring_data", 10)
+
         self.future = None # Used for client requests
 
         self.timer = self.create_timer(0.1, self.run)
@@ -222,7 +224,14 @@ class Controller(Node):
 
             t = self.get_time() - self.t0
 
-            self.monitoring.append([x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t])
+            data_array = [x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t]
+
+            self.monitoring.append(data_array)
+
+            publisher_msg = Float32MultiArray()
+            publisher_msg.data = data_array
+            self.data_publisher.publish(publisher_msg)
+            # self.get_logger().info(f'Publishing: {msg.data}')
 
         if self.input_string == 'stop': # Stop training session from terminal
             self.input_string = ''

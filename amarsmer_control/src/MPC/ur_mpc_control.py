@@ -34,6 +34,7 @@ class Controller(Node):
 
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
         self.pose_arrow_publisher = self.create_publisher(Marker, "/pose_arrow", 10)
+        self.data_publisher = self.create_publisher(Float32MultiArray, "/monitoring_data", 10)
 
         # Create a client for path request
         self.client = self.create_client(RequestPath, '/path_request')
@@ -183,9 +184,16 @@ class Controller(Node):
             cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
             psi_d_m = math.atan2(siny_cosp, cosy_cosp)
 
-            self.monitoring.append([x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t])
+            data_array = [x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t]
 
-            if (t - self.t_record) > 1:
+            self.monitoring.append(data_array)
+
+            publisher_msg = Float32MultiArray()
+            publisher_msg.data = data_array
+            self.data_publisher.publish(publisher_msg)
+            # self.get_logger().info(f'Publishing: {msg.data}')
+
+            if (t - self.t_record) > 1: # Update the saved file every second as doing so every step may corrupt the file if the callback is too frequent
                 self.t_record = t
                 np.save(self.title, self.monitoring)
         
