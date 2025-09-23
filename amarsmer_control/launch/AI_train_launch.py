@@ -1,4 +1,5 @@
 from simple_launch import SimpleLauncher
+from pathlib import Path
 
 
 def generate_launch_description():
@@ -13,4 +14,15 @@ def generate_launch_description():
 
     sl.node('amarsmer_control', 'AI_train_run.py')
 
+    """
+    layout_file = str(Path(__file__).parents[2] / "plotJuggler_2D_BP_monitoring.xml")
+
+    sl.node(
+        package="plotjuggler",
+        executable="plotjuggler",
+        name="plotjuggler_with_layout",
+        arguments=["--layout", layout_file]
+    )
+    """
+    
     return sl.launch_description()

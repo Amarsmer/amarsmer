@@ -22,8 +22,8 @@ class PyTorchOnlineTrainer:
         self.running = False
         self.training = False
 
-        self.learning_rate = 5e-2
-        self.optimizer_momentum = 0.1
+        self.learning_rate = 5e-4
+        self.optimizer_momentum = 0.2
         # Création de l'optimiseur (remplace partiellement la logique de backpropagate)
         self.optimizer = torch.optim.SGD(self.network.parameters(), lr=self.learning_rate, momentum=self.optimizer_momentum)
         
@@ -32,17 +32,13 @@ class PyTorchOnlineTrainer:
         self.last_gradient = [0, 0] if monitor else None
 
         # Variables init
-        self.error = np.zeros(6)
-        self.target = []
+        self.state = None
+        self.error = None
+        self.target = None
         self.command = []
+        self.state_display = None
 
         ## Modeling
-        # Coefficients for gradient computation (removes unnecessary temp variable attribution)
-        self.m = self.robot.mass
-        self.Xudot = self.robot.added_masses[0]
-        self.Nrdot = self.robot.added_masses[5]
-        self.Iz = self.robot.inertia[-1]
-
         # Compute B matrix (constant)
         self.r = 0.15
 
@@ -51,55 +47,57 @@ class PyTorchOnlineTrainer:
                       [0.        ,0.],
                      [self.r,-self.r]]) 
 
+        # Coefficients for gradient computation (removes unnecessary temp variable attribution)
+        self.m = self.robot.mass
+        self.Xudot = self.robot.added_masses[0]
+        self.Nrdot = self.robot.added_masses[5]
+        self.Iz = self.robot.inertia[-1]
+        
+        self.grad_xk = np.array([[0.                              , 0.                            ],
+                                 [0.                              , 0.                            ],
+                                 [0.                              , 0.                            ],
+                                 [1/(self.m - self.Xudot)         , 1/(self.m - self.Xudot)       ],
+                                 [0.                              , 0.                            ],
+                                 [self.r/(self.Iz - self.Nrdot)   , -self.r/(self.Iz - self.Nrdot)]])
+
         self.command_set = False # Make sure inputs have been computed before recording data
         self.gradient_flag = None # Used to display gradient in terminal
+        self.input_display = None # Used to display network input in terminal
+        self.error_display = None
 
-    def computeNetworkInput(self, target):
-        # Extract position and speed as column vectors
-        position = np.array([self.robot.current_pose[x] for x in [0, 1, 5]]).reshape(-1, 1)
-        speed = np.array([self.robot.current_twist[x] for x in [0, 1, 5]]).reshape(-1, 1)
+    def updateTarget(self, in_target):
+        self.target = in_target
 
-        # Concatenate vertically (stack columns)
-        state = np.vstack([position, speed])
+    def updateState(self, in_state):
+        self.state = in_state
 
+    def computeError(self):
         # Compute error as a column vector
-        self.error = state - np.array(target).reshape(-1, 1)
+        error = self.state - np.array(self.target).reshape(-1, 1)
         
-        self.error[2] -= theta_s(state[0], state[1])
+        # self.error[2] -= theta_s(state[0], state[1])
+        return error
 
-        weight_matrix = np.diag([0.1, 0.1, np.pi, 1, 1, 1])
+    def computeNetworkInput(self,error):
+        # error = self.computeError()
 
-        network_input = weight_matrix @ self.error
+        # Weight matrix used for input normalization
+        weight_matrix = np.diag([1/4, 1/4, 1/np.pi, 1, 1, 1])
+        network_input = weight_matrix @ error
+        # network_input = error
         
-        """
-        # Calculer l'entrée du réseau (erreur normalisée)
-        network_input = np.zeros(6)
-        network_input[0] = (self.error[0]) /10
-        network_input[1] = (self.error[1]) /10
-        network_input[2] = (self.error[2] - theta_s(state[0], state[1])) / np.pi
-        network_input[3] = (self.error[3])
-        network_input[4] = (self.error[4])
-        network_input[5] = (self.error[5])
-        """
         return network_input.ravel()
 
-    def computeGradient(self, delta_t):
-        grad_xk = np.array([[0.                              , 0.                            ],
-                            [0.                              , 0.                            ],
-                            [0.                              , 0.                            ],
-                            [1/(self.m - self.Xudot)         , 1/(self.m - self.Xudot)       ],
-                            [0.                              , 0.                            ],
-                            [self.r/(self.Iz - self.Nrdot)   , -self.r/(self.Iz - self.Nrdot)]])
-        
+    def computeGradient(self, delta_t, error):
         grad_u = np.eye(2) # Not necessary but makes the code closer to the theoretical model
 
         w_tau = self.R @ self.tau
         u = np.linalg.pinv(self.B) @ w_tau
 
-        gradxJ = 2 * (self.Q @ self.error)
+        gradxJ = 2 * (self.Q @ error)
         graduJ = 2 * (u)
 
-        grad = delta_t * (grad_xk.transpose() @ gradxJ) + grad_u @ graduJ
+        grad = delta_t * (self.grad_xk.transpose() @ gradxJ) + grad_u @ graduJ
         grad = grad.squeeze(-1)
 
         return grad
@@ -108,13 +106,28 @@ class PyTorchOnlineTrainer:
         # Update monitor if available
         if self.monitor:
             self.monitor.set_target(target)
-            
-        network_input = self.computeNetworkInput(target)
         
         # Boucle d'apprentissage
         while self.running:
             # Get initial time for gradient computation later
             start_time = time.time()
+
+            # self.computeError()
+            # error = self.state - np.array(self.target).reshape(-1, 1)
+            # network_input = self.computeNetworkInput(error)
+            # Compute error as a column vector
+            # self.error[2] -= theta_s(state[0], state[1])
+
+            # Weight matrix used for input normalization
+            # weight_matrix = np.diag([1/4, 1/4, 1/np.pi, 1, 1, 1])
+            # network_input = (weight_matrix @ self.error).ravel()
+            # network_input = self.error.ravel()
+            error = self.computeError()
+            network_input = self.computeNetworkInput(error)
+
+            self.state_train_display = self.state
+            self.error_display = self.error
+            self.input_display = network_input
             
             # Forward pass - get vector input
             input_tensor = torch.tensor(network_input, dtype=torch.float32)
@@ -133,10 +146,10 @@ class PyTorchOnlineTrainer:
             # Evaluate criteria before moving the robot
             self.command = np.array(self.command).reshape(-1, 1)
             self.tau = self.B @ self.command
-            first_criteria = self.error.transpose() @ self.Q @ self.error + self.tau.transpose() @ self.R @ self.tau
+            first_criteria = error.transpose() @ self.Q @ error + self.tau.transpose() @ self.R @ self.tau
 
             # Apply control input
-            input_coefficient = 5
+            input_coefficient = 40
             # Appliquer les commandes au robot
             self.robot.move([self.command[0]*input_coefficient,self.command[1]*input_coefficient,0,0],
                       [0 for i in range(1,5)])
@@ -144,13 +157,30 @@ class PyTorchOnlineTrainer:
             # Wait before evaluating criteria again
             time.sleep(0.050)
 
-            network_input = self.computeNetworkInput(target) # also updates error
+            """
+            # self.computeError(target)
+            # Extract position and speed as column vectors
+            position = np.array([self.robot.current_pose[x] for x in [0, 1, 5]]).reshape(-1, 1)
+            speed = np.array([self.robot.current_twist[x] for x in [0, 1, 5]]).reshape(-1, 1)
+
+            # Concatenate vertically (stack columns)
+            state = np.vstack([position, speed])
+            """
+            # Compute error as a column vector
+            # error = self.state - np.array(self.target).reshape(-1, 1)
+            error = self.computeError()
+            # self.error[2] -= theta_s(state[0], state[1])
+
+            # # Weight matrix used for input normalization
+            # weight_matrix = np.diag([1/4, 1/4, 1/np.pi, 1, 1, 1])
+            # # network_input = (weight_matrix @ self.error).ravel()
+            # network_input = self.error.ravel()
            
-            second_criteria = self.error.transpose() @ self.Q @ self.error + self.tau.transpose() @ self.R @ self.tau
+            second_criteria = error.transpose() @ self.Q @ error + self.tau.transpose() @ self.R @ self.tau
 
             if self.training:
                 delta_t = (time.time() - start_time)
-                grad = self.computeGradient(delta_t)             
+                grad = self.computeGradient(delta_t, error)             
 
                 # Update monitor with current gradient
                 if self.monitor:

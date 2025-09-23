@@ -38,7 +38,6 @@ class Controller(Node):
         super().__init__('ai_control', namespace='amarsmer')
 
         # self.declare_parameter('name', 'data')
-        self.declare_parameter('display', True)
         self.declare_parameter('load_weights', False)
         self.declare_parameter('train', True)
         self.declare_parameter('continue_running', True)
@@ -52,6 +51,7 @@ class Controller(Node):
         self.pose_arrow_publisher = self.create_publisher(Marker, "/pose_arrow", 10)
 
         self.data_publisher = self.create_publisher(Float32MultiArray, "/monitoring_data", 10)
+        self.network_publisher = self.create_publisher(Float32MultiArray, "/network_data", 10)
 
         self.future = None # Used for client requests
 
@@ -63,7 +63,7 @@ class Controller(Node):
         self.WORLD_BOUNDS = (-10, 10, -10, 10)  # x_min, x_max, y_min, y_max
 
         # Configuration de base
-        HL_size = 800
+        HL_size = 100
         input_size = 6
         output_size = 2
 
@@ -101,12 +101,19 @@ class Controller(Node):
 
         self.rov.current_pose = pose
         self.rov.current_twist = twist
-
-        # self.get_logger().info(f"{self.pose}")
-        # self.get_logger().info(f"{self.twist}")
     
     def str_input_callback(self, msg: String):
         self.input_string = msg.data
+
+    def updateRobotState(self):
+        # # Extract position and speed as column vectors
+        position = np.array([self.rov.current_pose[x] for x in [0, 1, 5]]).reshape(-1, 1)
+        speed = np.array([self.rov.current_twist[x] for x in [0, 1, 5]]).reshape(-1, 1)
+
+        # Concatenate vertically (stack columns)
+        self.state = np.vstack([position, speed])
+
+        self.trainer.updateState(self.state)
 
     def run(self):
         if not self.rov.ready():
@@ -115,24 +122,14 @@ class Controller(Node):
         target = self.get_parameter('target').get_parameter_value().string_value
         target = list(map(float, target.split())) # convert a multiple values string to a list
 
+        # Display target in gazebo
         target_pose = f.make_pose(target)
         f.create_pose_marker(target_pose, self.pose_arrow_publisher)
 
-        if not self.training_initiated:
+        if not self.training_initiated: # This code used to be in a while loop and requires adjustements to work as a ROS2 node
             self.training_initiated = True
 
-            self.t0 = self.get_time()
-
-            # Initialize the robot
-            # self.monitor = RobotMonitorAdapter(world_bounds=self.WORLD_BOUNDS)
-
-            # Ask for display preference
-            # self.display_curves= self.get_parameter('display').get_parameter_value().bool_value
-            # self.get_logger().info(f"stored display bool: {self.display_curves}")
-
-            # if self.display_curves:
-            #     self.monitor.start_monitoring()
-            #     time.sleep(1)
+            self.t0 = self.get_time() # Initial time for data collection
 
             # Weight loading
             if self.get_parameter('load_weights').get_parameter_value().bool_value:
@@ -140,21 +137,18 @@ class Controller(Node):
                     json_obj = json.load(fp)
                 self.network.load_weights_from_json(json_obj, HL_size)
                 
-
-            # Init PyTorch trainer with monitoring
-            # monitor_instance = self.monitor if self.display_curves else None
+            # Initialize trainer
             self.trainer = PyTorchOnlineTrainer(self.rov, self.network, None, self.Q_weight, self.R_weight)
 
             train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
-
-            if self.rov.current_pose == None: # Make sure the robot sim is loaded, possibly redundant with rov.ready()
-                return
-            self.trainer.training = (train)
 
             # Main training loop, currently runs only once
             continue_running = True
             session_count = 0
             session_count += 1
+
+            self.updateRobotState() # The trainer thread requires manual update of the robot's state
+            self.trainer.updateTarget(target) # To be used for trajectory tracking
 
             self.get_logger().info(f"\n⚙️ Starting training session #{session_count}")
 
@@ -207,8 +201,7 @@ class Controller(Node):
                 continue_running = False
             """
 
-        
-        # self.get_logger().info(f"Grad: {self.trainer.gradient_flag}") # Print gradient for debugging purposes
+        self.updateRobotState()
 
         ### Save data for monitoring
         if self.trainer.command_set: # Make sure the training has started
@@ -231,15 +224,26 @@ class Controller(Node):
             publisher_msg = Float32MultiArray()
             publisher_msg.data = data_array
             self.data_publisher.publish(publisher_msg)
+
+            publisher_msg = Float32MultiArray()
+            publisher_msg.data = self.trainer.input_display
+            self.network_publisher.publish(publisher_msg)
             # self.get_logger().info(f'Publishing: {msg.data}')
+            
+            
+            # Info 
+            # self.get_logger().info(f"Grad: {self.trainer.gradient_flag}") # Print gradient for debugging purposes
+            # self.get_logger().info(f"\n Internal state: {self.trainer.state}")
+            # self.get_logger().info(f"\n Internal error: {self.trainer.error}") 
+            # self.get_logger().info(f"\n Train state: {self.trainer.state_train_display}") 
+            # self.get_logger().info(f"\n Train error: {self.trainer.error_display}")
+            # self.get_logger().info(f"\n Network input: {self.trainer.input_display}")
+            
 
         if self.input_string == 'stop': # Stop training session from terminal
             self.input_string = ''
             self.trainer.running = False
             self.training_thread.join(timeout=5)
-            # if self.display_curves:
-            #     # self.monitor.save_results(f"session_{session_count}_{time.strftime('%Y%m%d_%H%M%S')}")
-            #     self.monitor.save_results(f"session_1_{time.strftime('%Y%m%d_%H%M%S')}")
 
             title = 'data/AI_data/' + self.date +'-AI_data'
             np.save(title, self.monitoring)
@@ -249,12 +253,6 @@ class Controller(Node):
             with open('last_w_torch.json', 'w') as fp:
                 json.dump(json_obj, fp)
 
-
-            # if self.display_curves:
-            #     self.monitor.save_results(f"final_results_{time.strftime('%Y%m%d_%H%M%S')}")
-            #     self.monitor.stop_monitoring()
-            # else:
-            #     print("⚠️ No results saved, monitoring was disabled")
             self.get_logger().info("Training stopped")
 
 rclpy.init()

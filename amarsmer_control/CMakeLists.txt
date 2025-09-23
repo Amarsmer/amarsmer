@@ -16,8 +16,6 @@ install(PROGRAMS src/AI/online_training.py
         DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS src/AI/backprop.py
         DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS src/AI/monitoring.py
-        DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS src/MPC/mpc_control.py
         DESTINATION lib/${PROJECT_NAME})
