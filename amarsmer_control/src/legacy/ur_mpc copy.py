@@ -15,7 +15,39 @@ def get_yaw_from_quaternion(q):
     return math.atan2(siny_cosp, cosy_cosp)
 
 # Model export
+""" # Old version, does not account for sway, hydrodynamic damping or added masses
+def export_underwater_model(robot_mass=10, iz=5):
+    model = AcadosModel()
+    model.name = "ur_robot_model"
 
+    # States
+    x = ca.SX.sym('x')
+    y = ca.SX.sym('y')
+    psi = ca.SX.sym('psi')
+    u = ca.SX.sym('u')
+    r = ca.SX.sym('r')
+    states = ca.vertcat(x, y, psi, u, r)
+
+    # Controls (can be expanded)
+    tau_u = ca.SX.sym('tau_u')
+    tau_r = ca.SX.sym('tau_r')
+    controls = ca.vertcat(tau_u, tau_r)
+
+    # Dynamics
+    x_dot = u * ca.cos(psi)
+    y_dot = u * ca.sin(psi)
+    psi_dot = r
+    u_dot = tau_u / robot_mass
+    r_dot = tau_r / iz
+    xdot = ca.vertcat(x_dot, y_dot, psi_dot, u_dot, r_dot)
+
+    model.x = states
+    model.u = controls
+    model.f_expl_expr = xdot
+    model.f_impl_expr = states - xdot
+
+    return model
+"""
 def export_underwater_model(
     robot_mass=10.0,
     iz=5.0,
@@ -51,22 +83,18 @@ def export_underwater_model(
     r_dot_sym   = ca.SX.sym('r_dot')
     Xdot = ca.vertcat(x_dot_sym, y_dot_sym, psi_dot_sym, u_dot_sym, v_dot_sym, r_dot_sym)
 
-    # Transient vector (tau = B*u)
+    # Controls
     tau_u = ca.SX.sym('tau_u')
     tau_v = ca.SX.sym('tau_v')
     tau_r = ca.SX.sym('tau_r')
-
-    # Controls
-    u1 = ca.SX.sym('u1')
-    u2 = ca.SX.sym('u2')
-    U = ca.vertcat(u1,u2)
+    U = ca.vertcat(tau_u, tau_v, tau_r)
 
     # Kinematics
     x_dot   = u * ca.cos(psi) - v * ca.sin(psi)
     y_dot   = u * ca.sin(psi) + v * ca.cos(psi)
     psi_dot = r
 
-    # Build rigid-body mass and added-mass matrices
+    # Build rigid-body mass and added-mass matrices (2x2 for [u, r])
     M_rb = ca.DM([[robot_mass, 0.0,        0.0],
                   [0.0,        robot_mass, 0.0],
                   [0.0,        0.0,        iz ]])
@@ -101,21 +129,13 @@ def export_underwater_model(
     # C*nu
     Cnu = ca.mtimes(C, nu)
 
-    # Tau
+    # Inputs (tau)
     tau = ca.vertcat(tau_u, tau_v, tau_r)
-
-    r = 0.15
-
-    B = ca.vertcat(ca.horzcat(1.0,       1.0),
-                   ca.horzcat(0.0,       0.0),
-                   ca.horzcat(r  ,      -r))
-
-    eq_tau = ca.mtimes(B, U)
 
     # Solve for nu_dot: M * nu_dot = tau - D*nu - g  =>  nu_dot = M^{-1} * (...)
     # Use casadi inverse (for 2x2 it's fine). If you prefer numerical stability
     # for larger matrices, use ca.solve(M, rhs) instead.
-    nu_dot = ca.solve(M, eq_tau - Cnu - Dnu)
+    nu_dot = ca.solve(M, tau - Cnu - Dnu)
 
     u_ddot = nu_dot[0]
     v_ddot = nu_dot[1]
@@ -128,6 +148,11 @@ def export_underwater_model(
     model.x = X
     model.xdot = Xdot
 
+    """
+    model.u = U
+    model.f_expl_expr = xdot
+    model.f_impl_expr = Xdot - xdot
+    """
     model.x = X
     model.u = U
     model.f_expl_expr = xdot
@@ -155,9 +180,17 @@ class MPCController:
         self.T = time
         self.dt = time / horizon
 
-        self.Q = Q_weight
-        self.R = R_weight
+        self.Q = Q_weight #if Q_weight is not None else np.diag([10, 10, 10, 1, 1, 1])
+        self.R = R_weight #if R_weight is not None else np.diag([0.1, 0.1, 0.1])
         self.input_bounds = input_bounds 
+
+        """
+        if input_bounds is not None else {
+            "lower": np.array([-5.0, -5.0, -2.0]),
+            "upper": np.array([5.0, 5.0, 2.0]),
+            "idx": np.array([0, 1, 2])
+        }
+        """
 
         self.model = export_underwater_model(self.mass, self.iz, a_u, a_v, a_r, d_u, d_v, d_r)
         self.ocp = self._build_ocp()
@@ -192,6 +225,13 @@ class MPCController:
         ocp.constraints.lbu = self.input_bounds["lower"]
         ocp.constraints.ubu = self.input_bounds["upper"]
         ocp.constraints.idxbu = self.input_bounds["idx"]
+
+        """
+        # State constraints (enable x0 via lbx/ubx)
+        ocp.constraints.idxbx = np.arange(nx)
+        ocp.constraints.lbx = -1e10 * np.ones(nx)
+        ocp.constraints.ubx =  1e10 * np.ones(nx)
+        """
 
         # Solver setup
         ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
@@ -247,15 +287,20 @@ class MPCController:
                 r = 0.0
 
             x_refs.append([x, y, psi, u, v, r])
-            # if i < self.N:
-            #     u_refs.append([0.0, 0.0])
+            if i < self.N:
+                u_refs.append([0.0, 0.0, 0.0])
 
+        """
         self.solver.set(0, 'x', x_current)
         self.solver.set(0, 'lbx', x_current)
         self.solver.set(0, 'ubx', x_current)
+        """
+        self.solver.set(0, 'x', x_current)            # initial guess
+        self.solver.set(0, 'lbx', x_current)          # if you insist on using lbx/ubx,
+        self.solver.set(0, 'ubx', x_current)          # better to do ocp.constraints.x0 instead
 
         x_refs = np.array(x_refs)  # shape (N+1, nx)
-        u_refs = np.zeros((self.N, 2))  # N x nu
+        u_refs = np.zeros((self.N, 3))  # N x nu
 
         for i in range(self.N):
             yref = np.concatenate((x_refs[i], u_refs[i]))
