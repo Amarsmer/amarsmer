@@ -20,7 +20,7 @@ class PyTorchOnlineTrainer:
         
         # Training state
         self.running = False
-        self.training = False
+        self.training = True
 
         self.learning_rate = in_learning_rate
         self.optimizer_momentum = in_momentum
@@ -32,7 +32,7 @@ class PyTorchOnlineTrainer:
         self.state = None
         self.error = None
         self.target = None
-        self.command = []
+        self.u = []
         self.state_display = None
 
         ## Modeling
@@ -41,16 +41,23 @@ class PyTorchOnlineTrainer:
 
         # NED not yet implemented, so the last row is reversed
         self.B = np.array([[1.        ,1.],
-                      [0.        ,0.],
-                     [self.r,-self.r]]) 
+                           [0.        ,0.],
+                           [self.r,-self.r]]) 
 
         # Coefficients for gradient computation (removes unnecessary temp variable attribution in loop)
         self.m = self.robot.mass
+
         self.Xudot = self.robot.added_masses[0]
+        self.Yvdot = self.robot.added_masses[1]
         self.Nrdot = self.robot.added_masses[5]
+
+        self.Xu = self.robot.viscous_drag[0]
+        self.Yv = self.robot.viscous_drag[1]
+        self.Nr = self.robot.viscous_drag[5]
+
         self.Iz = self.robot.inertia[-1]
         
-        self.grad_xk = np.array([[0.                              , 0.                            ],
+        self.grad_xdk = np.array([[0.                              , 0.                            ],
                                  [0.                              , 0.                            ],
                                  [0.                              , 0.                            ],
                                  [1/(self.m - self.Xudot)         , 1/(self.m - self.Xudot)       ],
@@ -58,9 +65,10 @@ class PyTorchOnlineTrainer:
                                  [self.r/(self.Iz - self.Nrdot)   , -self.r/(self.Iz - self.Nrdot)]])
 
         self.command_set = False # Make sure inputs have been computed before recording data
-        self.gradient_display = None # Used to display gradient in terminal
+        self.gradient_display = np.zeros(2) # Used to display gradient in terminal
         self.input_display = None # Used to display network input in terminal
         self.error_display = None # Used to display error in terminal
+        self.delta_t_display = None
 
     def updateTarget(self, in_target):
         self.target = in_target
@@ -77,19 +85,47 @@ class PyTorchOnlineTrainer:
 
     def computeNetworkInput(self, error):
         # Weight matrix used for input normalization
-        weight_matrix = np.diag([1/4, 1/4, 1/np.pi, 1, 1, 1])
+        weight_matrix = np.diag([1/5, 1/5, 1/np.pi, 1, 1, 1])
         network_input = weight_matrix @ error
         
         return network_input.ravel()
 
-    def computeGradient(self, delta_t, error):
-        w_tau = self.R @ self.tau
-        u = np.linalg.pinv(self.B) @ w_tau
+    def computeGradient(self, delta_t, error, first_order = 1, second_order = 1):
+        cos = np.cos
+        sin = np.sin
+
+        x,y,psi,u,v,r = self.state
 
         gradxJ = 2 * (self.Q @ error)
-        graduJ = 2 * (u)
+        graduJ = 2 * (self.R @ self.u)
 
-        grad = delta_t * (self.grad_xk.transpose() @ gradxJ) + graduJ
+        fod_grad = self.grad_xdk # first order derivative gradient
+
+        # second order derivative gradient, done in multiple steps to increase readibility and ease of debugging
+        fracmXu = self.m + self.Xudot
+        fracmYv = self.m + self.Yvdot
+        fracIzNr = self.Iz + self.Nrdot
+
+        grad3_A = -self.r*v*(m - self.Yvdot)/fracIzNr # each "A" element is dependent on the radius and may need a change of sign when NED is implemented
+        grad3_B = self.Xu/fracmXu
+
+        grad4_A = u*self.r/fracIzNr
+        grad4_B = r/fracmXu
+
+        grad5_A = -(self.r*self.Nr)/fracIzNr
+        grad5_B = v*(self.Yvdot-self.Xudot)/fracmXu
+
+        sod_grad = np.array([[cos(psi)/fracmXu                                  , cos(psi)/fracmXu                                  ],
+                            [sin(psi)/fracmXu                                  , sin(psi)/fracmXu                                  ],
+                            [self.r/fracIzNr                                   , -self.r/fracIzNr                                  ],
+                            [(-grad3_A + grad3_B)/fracmXu                      , (grad3_A + grad3_B)/fracmXu                       ],
+                            [(-grad4_A + grad4_B)*(self.Xudot - self.m)/fracmYv, (-grad4_A + grad4_B)*(self.Xudot - self.m)/fracmYv],
+                            [(-grad5_A + grad5_B)/fracIzNr                     , (-grad5_A + grad5_B)/fracIzNr                     ]]) 
+
+        # cost function gradient
+        time_gradient = first_order * delta_t * fod_grad + second_order * delta_t**2/2 * sod_grad #first_order and second_order are meant to be either 0 or 1 to toggle the use of different gradients for testing
+
+        grad = delta_t * (time_gradient.transpose() @ gradxJ) + graduJ
         grad = grad.squeeze(-1) # Removes the dimensions of size 1
 
         return grad
@@ -105,7 +141,7 @@ class PyTorchOnlineTrainer:
 
             # Monitoring data for debugging purposes
             self.state_train_display = self.state
-            self.error_display = self.error
+            self.error_display = error
             self.input_display = network_input
             
             # Forward pass - get vector input
@@ -113,37 +149,41 @@ class PyTorchOnlineTrainer:
             if self.training:
                 # Use gradient when training
                 input_tensor.requires_grad_(True)
-                self.command = self.network(input_tensor).tolist()
+                self.u = self.network(input_tensor).tolist()
             else:
                 # No gradients otherwise
                 with torch.no_grad():
-                    self.command = self.network(input_tensor).tolist()
+                    self.u = self.network(input_tensor).tolist()
             
             if not self.command_set: # Used for data recording purposes
                 self.command_set = True
             
             # Evaluate criteria before moving the robot
-            self.command = np.array(self.command).reshape(-1, 1)
-            self.tau = self.B @ self.command
+            input_coefficient = 40 # The network outputs 1 at max and the thrusters are expected to be able to output 40 newtons
+            self.u = input_coefficient * np.array(self.u).reshape(-1, 1)
 
-            first_criteria = error.transpose() @ self.Q @ error + self.tau.transpose() @ self.R @ self.tau
+            first_criteria = error.transpose() @ self.Q @ error + self.u.transpose() @ self.R @ self.u
 
             # Apply control input
-            input_coefficient = 40 # The network outputs 1 at max and the thrusters are expected to be able to output 40 newtons
-            self.robot.move([self.command[0]*input_coefficient,self.command[1]*input_coefficient,0,0],
+            self.robot.move([self.u[0],self.u[1],0,0],
                       [0 for i in range(1,5)])
             
             # Wait before evaluating criteria again
-            time.sleep(0.050)
+            # time.sleep(0.050)
 
             # Update error
             error = self.computeError()
            
-            second_criteria = error.transpose() @ self.Q @ error + self.tau.transpose() @ self.R @ self.tau
+            second_criteria = error.transpose() @ self.Q @ error + self.u.transpose() @ self.R @ self.u
 
             if self.training:
                 delta_t = (time.time() - start_time)
-                grad = self.computeGradient(delta_t, error)             
+
+                self.delta_t_display = delta_t
+
+                grad = self.computeGradient(delta_t, error)
+
+                self.gradient_display = grad     
                 
                 # TODO: adapt learning strategy depending on criteria, currently does the same thing either way
                 # Learning strategy

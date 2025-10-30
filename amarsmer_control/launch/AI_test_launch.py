@@ -11,6 +11,6 @@ def generate_launch_description():
 
     sl.node('amarsmer_control', 'path_publisher.py')
 
-    sl.node('amarsmer_control', 'AI_train_run.py')
+    sl.node('amarsmer_control', 'AI_test_run.py')
 
     return sl.launch_description()

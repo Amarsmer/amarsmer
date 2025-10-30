@@ -48,7 +48,7 @@ class Controller(Node):
 
         # MPC Parameters
         self.mpc_horizon = 10
-        self.mpc_time = 0.5
+        self.mpc_time = 2.0
         self.mpc_path = Path()
         linear_bound = 40.0
         angular_bound = 15.0
@@ -56,23 +56,18 @@ class Controller(Node):
                              "upper": np.array([linear_bound, linear_bound]),
                              "idx":   np.array([0, 1])
                              }
-        self.Q_weight = np.diag([30, # x
-                                 30, # y 
-                                 20, # psi
+        self.Q_weight = np.diag([50, # x
+                                 50, # y 
+                                 40, # psi
                                  1, # u
                                  1, # v
                                  1  # r
                                  ])
         
-        """
-        self.R_weight = np.diag([0.03, # X
-                                 0.03, # Y
-                                 0.03   # N
+        self.R_weight = np.diag([0.015, # u1
+                                 0.015  # u2
                                  ])
-        """
-        self.R_weight = np.diag([0.03, # u1
-                                 0.03  # u2
-                                 ])
+
         # Initialize MPC solver
         self.controller = None #Updated at the start of spin
 
@@ -81,7 +76,7 @@ class Controller(Node):
         self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2','t'])
 
         self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
-        self.title = 'data/MPC_data/' + self.date +'-mpc_data'
+        self.title = 'data/MPC_data/' + self.date + '-mpc_data'
 
         self.t_record = self.get_time()
 
@@ -158,19 +153,7 @@ class Controller(Node):
             desired_pose = self.mpc_path.poses[0].pose
             f.create_pose_marker(desired_pose, self.pose_arrow_publisher) # Display the current desired pose
 
-            u = self.controller.solve(path=self.mpc_path, x_current=x_current)
-
-        """
-        cylinder_l = 0.6
-        cylinder_r = 0.15
-
-        nstall/setup;n
-        # Define thrust allocation matrix and use it to apply tau on thrusters
-        B = np.array([[1.        ,1.],
-                      [0.        ,0.],
-                     [cylinder_r,-cylinder_r]]) # Note that the current frame is NOT NED so the y and z axis are reversed
-        u = np.linalg.pinv(B) @ tau
-        """
+            u = self.controller.solve(path=self.mpc_path, x_current=x_current) 
 
         # give thruster forces and joint angles
         self.rov.move([u[0],u[1],0,0],

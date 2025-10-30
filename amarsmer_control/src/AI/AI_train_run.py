@@ -24,7 +24,6 @@ import functions as f
 from amarsmer_control import ROV
 from backprop import NN
 from online_training import PyTorchOnlineTrainer
-# from monitoring import RobotMonitorAdapter
 
 # Training specific librairies
 import torch
@@ -59,23 +58,26 @@ class Controller(Node):
         ## Initiating variables
         # Network parameters
         HL_size = 100
-        input_size = 6
-        output_size = 2
-        learning_rate = 5e-4
-        momentum = 0.2
+        input_size = 6 # x, y, psi, u, v, r
+        output_size = 2 # u1, u2
+        self.learning_rate = 0.5
+        self.momentum = 0.0 # Portion of the gradient reported to the next one
 
         # Weighting matrices
         self.Q_weight = np.diag([50, # x
                                  50, # y 
                                  40, # psi
-                                 1, # u
-                                 1, # v
-                                 1  # r
+                                 0, # u
+                                 0, # v
+                                 0  # r
                                  ])
         
-        self.R_weight = np.diag([0.03, # X
-                                 0.03, # Y
-                                 0.03   # N
+        # self.R_weight = np.diag([0.015, # u1
+        #                          0.015  # u2
+        #                          ])
+
+        self.R_weight = np.diag([0., # u1
+                                 0.  # u2
                                  ])
 
         # Create pytorch network
@@ -86,7 +88,7 @@ class Controller(Node):
 
         # Initiate monitoring data, both stored as .npy and published on a topic
         self.monitoring = []
-        self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2','t']) # Naming the variables in the first row, useful as is and even more so if data points change between version
+        self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2', 'grad1', 'grad2', 't']) # Naming the variables in the first row, useful as is and even more so if data points change between version
 
         self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
 
@@ -125,36 +127,36 @@ class Controller(Node):
         f.create_pose_marker(target_pose, self.pose_arrow_publisher)
 
 
-    # Initialize
-    if not self.training_initiated: # This code used to be in a while loop and requires adjustements to work as a ROS2 node
-        self.training_initiated = True
+        # Initialize
+        if not self.training_initiated: # This code used to be in a while loop and requires adjustements to work as a ROS2 node
+            self.training_initiated = True
 
-        self.t0 = self.get_time() # Initial time for data collection
+            self.t0 = self.get_time() # Initial time for data collection
 
-        # Weight loading
-        if self.get_parameter('load_weights').get_parameter_value().bool_value:
-            with open('last_w_torch.json') as fp:
-                json_obj = json.load(fp)
-            self.network.load_weights_from_json(json_obj, HL_size)
-            
-        # Initialize trainer
-        self.trainer = PyTorchOnlineTrainer(self.rov, self.network, learning_rate, momentum, self.Q_weight, self.R_weight)
+            # Weight loading
+            if self.get_parameter('load_weights').get_parameter_value().bool_value:
+                with open('last_w_torch.json') as fp:
+                    json_obj = json.load(fp)
+                self.network.load_weights_from_json(json_obj, HL_size)
+                
+            # Initialize trainer
+            self.trainer = PyTorchOnlineTrainer(self.rov, self.network, self.learning_rate, self.momentum, self.Q_weight, self.R_weight)
 
-        train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
+            train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
 
-        # Main training loop, currently runs only once
-        continue_running = True
-        session_count = 0
-        session_count += 1
+            # Main training loop, currently runs only once
+            continue_running = True
+            session_count = 0
+            session_count += 1
 
-        self.updateRobotState() # The trainer thread requires manual update of the robot's pose and twist
-        self.trainer.updateTarget(target) # To be used for trajectory tracking
+            self.updateRobotState() # The trainer thread requires manual update of the robot's pose and twist
+            self.trainer.updateTarget(target) # To be used for trajectory tracking
 
-        self.get_logger().info(f"\n⚙️ Starting training session #{session_count}")
+            self.get_logger().info(f"\n Starting training session #{session_count}")
 
-        self.training_thread = threading.Thread(target=self.trainer.train, args=(target,)) # Start training process on a separate thread
-        self.trainer.running = True
-        self.training_thread.start()
+            self.training_thread = threading.Thread(target=self.trainer.train, args=(target,)) # Start training process on a separate thread
+            self.trainer.running = True
+            self.training_thread.start()
         
         #TODO: add flexibility to run multiple training sessions
         """
@@ -201,57 +203,62 @@ class Controller(Node):
             continue_running = False
         """
 
-    self.updateRobotState()
+        self.updateRobotState()
 
-    ### Save data for monitoring
-    if self.trainer.command_set: # Make sure the training has started
-        x_m = self.rov.current_pose[0]
-        y_m = self.rov.current_pose[1]
-        psi_m = self.rov.current_pose[5]
+        ### Save data for monitoring
+        if self.trainer.command_set: # Make sure the training has started
+            x_m = self.rov.current_pose[0]
+            y_m = self.rov.current_pose[1]
+            psi_m = self.rov.current_pose[5]
 
-        x_d_m = target[0]
-        y_d_m = target[1]
-        psi_d_m = target[2]
+            x_d_m = target[0]
+            y_d_m = target[1]
+            psi_d_m = target[2]
 
-        u = self.trainer.command
+            u = self.trainer.u
 
-        t = self.get_time() - self.t0
+            t = self.get_time() - self.t0
 
-        data_array = [x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], t]
+            grad = self.trainer.gradient_display
 
-        self.monitoring.append(data_array)
+            data_array = [x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], grad[0], grad[1], t]
 
-        publisher_msg = Float32MultiArray()
-        publisher_msg.data = data_array
-        self.data_publisher.publish(publisher_msg)
+            self.monitoring.append(data_array)
 
-        publisher_msg = Float32MultiArray()
-        publisher_msg.data = self.trainer.input_display
-        self.network_publisher.publish(publisher_msg)
-        
-        # Debug info
-        # self.get_logger().info(f"Grad: {self.trainer.gradient_flag}") 
-        # self.get_logger().info(f"\n Internal state: {self.trainer.state}")
-        # self.get_logger().info(f"\n Internal error: {self.trainer.error}") 
-        # self.get_logger().info(f"\n Train state: {self.trainer.state_train_display}") 
-        # self.get_logger().info(f"\n Train error: {self.trainer.error_display}")
-        # self.get_logger().info(f"\n Network input: {self.trainer.input_display}")
-        
+            publisher_msg = Float32MultiArray()
+            publisher_msg.data = data_array
+            self.data_publisher.publish(publisher_msg)
 
-    if self.input_string == 'stop': # Stop training session from terminal
-        self.input_string = ''
-        self.trainer.running = False
-        self.training_thread.join(timeout=5)
+            publisher_msg = Float32MultiArray()
+            publisher_msg.data = self.trainer.error_display
+            self.network_publisher.publish(publisher_msg)
+            
+            # Debug info
+            self.get_logger().info(f"Grad: {self.trainer.gradient_display}") 
+            self.get_logger().info(f"U: {self.trainer.u}") 
+            self.get_logger().info(f"Delta_t: {self.trainer.delta_t_display} \n") 
+            # self.get_logger().info(f"\n Internal state: {self.trainer.state}")
+            # self.get_logger().info(f"\n Internal error: {self.trainer.error}") 
+            # self.get_logger().info(f"\n Train state: {self.trainer.state_train_display}")
+            # self.get_logger().info(f"\n Train target: {self.trainer.target}") 
+            # self.get_logger().info(f"\n Train error: {self.trainer.error_display}")
+            # self.get_logger().info(f"\n Network input: {self.trainer.input_display}")
+            
 
-        title = 'data/AI_data/' + self.date +'-AI_data'
-        np.save(title, self.monitoring)
+        if self.input_string == 'stop': # Stop training session from terminal
+            self.input_string = ''
+            self.trainer.running = False
+            self.training_thread.join(timeout=5)
 
-        # Save the weights
-        json_obj = self.network.save_weights_to_json()
-        with open('last_w_torch.json', 'w') as fp:
-            json.dump(json_obj, fp)
+            title = 'data/AI_data/' + self.date +'-AI_data'
+            np.save(title, self.monitoring)
 
-        self.get_logger().info("Training stopped")
+            # Save the weights
+            json_obj = self.network.save_weights_to_json()
+            with open('last_w_torch.json', 'w') as fp:
+                json.dump(json_obj, fp)
+
+            self.get_logger().info("Training stopped")
 
 rclpy.init()
 node = Controller()

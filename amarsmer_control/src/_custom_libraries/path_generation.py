@@ -26,7 +26,7 @@ class PathGeneration(Node):
         # Service
         self.path_service = self.create_service(RequestPath, '/path_request', self.generate_path)
 
-    def single_pose(self, t: float, path_shape = 'sin') -> PoseStamped:
+    def single_pose(self, t: float, path_shape = 'kin_square') -> PoseStamped:
         """
         Generate a helical pose for a given time t.
         """
@@ -64,7 +64,7 @@ class PathGeneration(Node):
             vx = 0.5
 
             x = vx*t
-            y = 0.0 + a * np.sin(f*t)
+            y = 1.0 + a * np.sin(f*t)
             z = 0.0
 
             dx = vx
@@ -142,6 +142,7 @@ class PathGeneration(Node):
             y = float(y)
             z = 0.0
             yaw = float(yaw)
+
             
 
         # Create and return pose

@@ -8,8 +8,6 @@ import rclpy
 # Common python libraries
 import time
 import math
-import sys
-import os
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from datetime import datetime
@@ -26,11 +24,30 @@ from hydrodynamic_model import hydrodynamic
 import ur_mpc
 from amarsmer_control import ROV
 from amarsmer_interfaces.srv import RequestPath
+import functions as f
 
-class Robot(Node):
+import torch
+import json
+import threading
+import atexit
+import time
+# from robot_sim import ZMQPioneerSimulation
+from amarsmer_control import ROV
+from backprop import NN
+from online_training import PyTorchOnlineTrainer
+from monitoring import RobotMonitorAdapter
+
+class Controller(Node):
     def __init__(self):
 
         super().__init__('mpc_control', namespace='amarsmer')
+
+        # self.declare_parameter('name', 'data')
+        self.declare_parameter('display', False)
+        self.declare_parameter('load_weights', False)
+        self.declare_parameter('train', True)
+        self.declare_parameter('target', '5 0 0')
+
 
         self.rov = ROV(self, thrust_visual = True)
 
@@ -49,106 +66,34 @@ class Robot(Node):
 
         ## Initiating variables
 
-        # Pose
-        self.current_pose = None
-        self.current_twist = None
-
         # Définir les dimensions du monde pour le monitoring
         self.WORLD_BOUNDS = (-10, 10, -10, 10)  # x_min, x_max, y_min, y_max
 
         self.r = 0.096  # wheel radius
         self.R = 0.267  # demi-distance entre les roues
-        '''
-        # MPC Parameters
-        self.mpc_horizon = 1
-        self.mpc_time = 1.2
-        self.mpc_path = Path()
-        self.input_bounds = {"lower": np.array([-40.0, -15.0]),
-                             "upper": np.array([40.0, 15.0]),
-                             "idx":   np.array([0, 1])
-                             }
-        self.Q_weight = np.diag([50, # x
-                                 50, # y 
-                                 50, # psi
-                                 20, # u
-                                 20  # r
-                                 ])
 
-        self.R_weight = np.diag([0.1, # X
-                                 0.5  # N
-                                 ])
+        # Configuration de base
+        HL_size = 10
+        input_size = 3
+        output_size = 2
 
-        # Initialize MPC solver
-        self.controller = None #Updated at the start of spin
+        # Création du réseau PyTorch
+        self.network = NN(input_size, HL_size, output_size)
 
-        # Initialize monitoring values
-        self.monitoring = []
-        self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2','t'])
-
-        self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
-        '''
+        self.trainer = None
 
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
         return s + ns*1e-9
 
-    def pose_to_array(self, msg_pose): # Used to convert pose msg to a regular array
-        # Extract position
-        x = msg_pose.position.x
-        y = msg_pose.position.y
-        z = msg_pose.position.z
-
-        # Extract orientation (quaternion)
-        qx = msg_pose.orientation.x
-        qy = msg_pose.orientation.y
-        qz = msg_pose.orientation.z
-        qw = msg_pose.orientation.w
-
-        # Convert quaternion to roll, pitch, yaw
-        rot = R.from_quat([qx, qy, qz, qw])
-        roll, pitch, yaw = rot.as_euler('xyz', degrees=False)
-
-        return [x,y,z,roll,pitch,yaw]
-
     def odom_callback(self, msg: Odometry):
-        # Extract pose
-        msg_pose = msg.pose.pose
+        pose, twist = f.odometry(msg)
 
-        self.current_pose = self.pose_to_array(msg_pose)
-
-        # Extract twist
-        twist = msg.twist.twist
-        u = twist.linear.x
-        v = twist.linear.y
-        w = twist.linear.z
-
-        p = twist.angular.x
-        q = twist.angular.y
-        r = twist.angular.z
-        
-        self.current_twist = [u,v,w,p,q,r]
+        self.rov.current_pose = pose
+        self.rov.current_twist = twist
 
         # self.get_logger().info(f"{self.pose}")
         # self.get_logger().info(f"{self.twist}")
-
-    def create_pose_marker(self, inPose):
-        marker = Marker()
-        marker.header.frame_id = "world"
-        marker.type = Marker.ARROW
-        marker.action = Marker.ADD
-        marker.scale.x = 0.5  # shaft length
-        marker.scale.y = 0.05  # shaft diameter
-        marker.scale.z = 0.05  # head diameter
-        marker.color.a = 1.0
-        marker.color.r = 0.0
-        marker.color.g = 0.0
-        marker.color.b = 1.0
-        marker.pose = inPose
-
-        marker.id = 0
-        marker.lifetime.sec = 0  # persistent
-
-        self.pose_arrow_publisher.publish(marker)
 
     def run(self):
         if not self.rov.ready():
@@ -156,7 +101,6 @@ class Robot(Node):
 
         # Initialize the robot
         monitor = RobotMonitorAdapter(world_bounds=self.WORLD_BOUNDS)
-        trainer = None
 
         '''
         # Register cleanup function to ensure simulation is stopped
@@ -172,40 +116,30 @@ class Robot(Node):
         # Wait a moment to ensure the simulation is fully started
         # time.sleep(1)
 
-        # Configuration de base  (par défaut pour la couche cachée.Peut etre modifié dans le module torch_back.py)
-        HL_size = 10
-        input_size = 3
-        output_size = 2
-
-        # Création du réseau PyTorch
-        network = PioneerNN(input_size, HL_size, output_size)
-
         # Ask for display preference
-        display_choice = ''
-        while display_choice.lower() not in ('y', 'n'):
-            display_choice = input('Enable real-time display? (y/n) --> ')
+        display_curves= self.get_parameter('display').get_parameter_value().bool_value
 
-        if display_choice.lower() == 'y':
+        if display_curves:
             monitor.start_monitoring()
 
         # Chargement de poids existants
-        choice = input('Do you want to load previous network? (y/n) --> ')
-        if choice == 'y':
+        if self.get_parameter('load_weights').get_parameter_value().bool_value and False:
             with open('last_w_torch.json') as fp:
                 json_obj = json.load(fp)
-            network.load_weights_from_json(json_obj, HL_size)
+            self.network.load_weights_from_json(json_obj, HL_size)
             
 
         # Initialiser le trainer PyTorch avec monitoring
-        monitor_instance = monitor if display_choice.lower() == 'y' else None
-        trainer = PyTorchOnlineTrainer(self.rov, network, monitor_instance)
+        monitor_instance = monitor if display_curves else None
+        self.trainer = PyTorchOnlineTrainer(self.rov, self.network, monitor_instance)
 
-        choice = ''
-        while choice!='y' and choice !='n':
-            choice = input('Do you want to learn? (y/n) --> ')
+        train = self.get_parameter('load_weights').get_parameter_value().bool_value #Boolean
 
-        trainer.training = (choice.lower() == 'y')
+        if self.rov.current_pose == None:
+            return
+        self.trainer.training = (train)
 
+        """
         # Demander la cible
         target_input = input("Enter the first target : x y radian --> ")
         target = target_input.split()
@@ -213,8 +147,11 @@ class Robot(Node):
             raise ValueError("Need exactly 3 values")
         for i in range(len(target)):
             target[i] = float(target[i])
-
+        """
+        target = self.get_parameter('target').get_parameter_value().string_value
+        target = list(map(float, target.split())) # convert a multiple values string to a list
         # TODO self.create_pose_marker(desired_pose)
+        #f.create_pose_marker(inpose, self.pose_arrow_publisher)
 
 
         # Boucle principale d'entraînement
@@ -225,13 +162,13 @@ class Robot(Node):
             session_count += 1
             print(f"\n⚙️ Starting training session #{session_count}")
 
-            thread = threading.Thread(target=trainer.train, args=(target,))
-            trainer.running = True
+            thread = threading.Thread(target=self.trainer.train, args=(target,))
+            self.trainer.running = True
             thread.start()
 
             try:
                 input("Press Enter to stop the current training")
-                trainer.running = False
+                self.trainer.running = False
                 
                 thread.join(timeout=5)
                 if thread.is_alive():
@@ -239,10 +176,10 @@ class Robot(Node):
                     
             except KeyboardInterrupt:
                 print("\nKeyboard interrupt detected. Stopping training...")
-                trainer.running = False
+                self.trainer.running = False
                 thread.join(timeout=5)
 
-            if display_choice.lower() == 'y':
+            if display_curves:
                 monitor.save_results(f"session_{session_count}_{time.strftime('%Y%m%d_%H%M%S')}")
 
             choice = ''
@@ -254,7 +191,7 @@ class Robot(Node):
                 while choice_learning.lower() not in ['y', 'n']:
                     choice_learning = input('Do you want to learn? (y/n) --> ')
                 
-                trainer.training = (choice_learning.lower() == 'y')
+                self.trainer.training = (choice_learning.lower() == 'y')
                 
                 target_input = input("Move the robot to the initial point and enter the new target : x y radian --> ")
                 target = [float(x) for x in target_input.split()]
@@ -265,12 +202,12 @@ class Robot(Node):
                 continue_running = False
 
         # Save the weights
-        json_obj = network.save_weights_to_json()
+        json_obj = self.network.save_weights_to_json()
         with open('last_w_torch.json', 'w') as fp:
             json.dump(json_obj, fp)
 
 
-        if display_choice.lower() == 'y':
+        if display_curves:
             monitor.save_results(f"final_results_{time.strftime('%Y%m%d_%H%M%S')}")
         else:
             print("⚠️ No results saved, monitoring was disabled")
