@@ -60,24 +60,37 @@ class Controller(Node):
         HL_size = 100
         input_size = 6 # x, y, psi, u, v, r
         output_size = 2 # u1, u2
-        self.learning_rate = 0.5
+        self.learning_rate = 1e-1
         self.momentum = 0.0 # Portion of the gradient reported to the next one
+
+        """
+        ################# Weighting matrices meant to be equivalent to MPC
 
         # Weighting matrices
         self.Q_weight = np.diag([50, # x
                                  50, # y 
                                  40, # psi
-                                 0, # u
-                                 0, # v
-                                 0  # r
+                                 1, # u
+                                 1, # v
+                                 1  # r
                                  ])
         
-        # self.R_weight = np.diag([0.015, # u1
-        #                          0.015  # u2
-        #                          ])
+        self.R_weight = np.diag([0.015, # u1
+                                 0.015  # u2
+                                 ])
+        """
 
-        self.R_weight = np.diag([0., # u1
-                                 0.  # u2
+        # Weighting matrices
+        self.Q_weight = np.diag([50, # x
+                                 50, # y 
+                                 40, # psi
+                                 1, # u
+                                 1, # v
+                                 1  # r
+                                 ])
+        
+        self.R_weight = np.diag([0.015, # u1
+                                 0.015  # u2
                                  ])
 
         # Create pytorch network
@@ -234,9 +247,9 @@ class Controller(Node):
             self.network_publisher.publish(publisher_msg)
             
             # Debug info
-            self.get_logger().info(f"Grad: {self.trainer.gradient_display}") 
-            self.get_logger().info(f"U: {self.trainer.u}") 
-            self.get_logger().info(f"Delta_t: {self.trainer.delta_t_display} \n") 
+            # self.get_logger().info(f"Grad: {self.trainer.gradient_display}") 
+            # self.get_logger().info(f"U: {self.trainer.u}") 
+            # self.get_logger().info(f"Delta_t: {self.trainer.delta_t_display} \n") 
             # self.get_logger().info(f"\n Internal state: {self.trainer.state}")
             # self.get_logger().info(f"\n Internal error: {self.trainer.error}") 
             # self.get_logger().info(f"\n Train state: {self.trainer.state_train_display}")

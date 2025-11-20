@@ -94,7 +94,7 @@ class PyTorchOnlineTrainer:
         cos = np.cos
         sin = np.sin
 
-        x,y,psi,u,v,r = self.state
+        x,y,psi,u,v,r = self.state.ravel()
 
         gradxJ = 2 * (self.Q @ error)
         graduJ = 2 * (self.R @ self.u)
@@ -106,21 +106,21 @@ class PyTorchOnlineTrainer:
         fracmYv = self.m + self.Yvdot
         fracIzNr = self.Iz + self.Nrdot
 
-        grad3_A = -self.r*v*(m - self.Yvdot)/fracIzNr # each "A" element is dependent on the radius and may need a change of sign when NED is implemented
+        grad3_A = self.r*v*(self.m - self.Yvdot)/fracIzNr # each "A" element is dependent on the radius and may need a change of sign when NED is implemented
         grad3_B = self.Xu/fracmXu
 
-        grad4_A = u*self.r/fracIzNr
+        grad4_A = u*r/fracIzNr
         grad4_B = r/fracmXu
 
-        grad5_A = -(self.r*self.Nr)/fracIzNr
+        grad5_A = (self.r*self.Nr)/fracIzNr
         grad5_B = v*(self.Yvdot-self.Xudot)/fracmXu
 
-        sod_grad = np.array([[cos(psi)/fracmXu                                  , cos(psi)/fracmXu                                  ],
+        sod_grad = np.array([[cos(psi)/fracmXu                                 , cos(psi)/fracmXu                                  ],
                             [sin(psi)/fracmXu                                  , sin(psi)/fracmXu                                  ],
                             [self.r/fracIzNr                                   , -self.r/fracIzNr                                  ],
                             [(-grad3_A + grad3_B)/fracmXu                      , (grad3_A + grad3_B)/fracmXu                       ],
-                            [(-grad4_A + grad4_B)*(self.Xudot - self.m)/fracmYv, (-grad4_A + grad4_B)*(self.Xudot - self.m)/fracmYv],
-                            [(-grad5_A + grad5_B)/fracIzNr                     , (-grad5_A + grad5_B)/fracIzNr                     ]]) 
+                            [(-grad4_A + grad4_B)*(self.Xudot - self.m)/fracmYv, (grad4_A + grad4_B)*(self.Xudot - self.m)/fracmYv ],
+                            [(-grad5_A + grad5_B)/fracIzNr                     , (grad5_A + grad5_B)/fracIzNr                      ]]) 
 
         # cost function gradient
         time_gradient = first_order * delta_t * fod_grad + second_order * delta_t**2/2 * sod_grad #first_order and second_order are meant to be either 0 or 1 to toggle the use of different gradients for testing
