@@ -6,10 +6,10 @@ import torch
 import numpy as np
 
 def theta_s(x, y):
-    return math.tanh(10.*x)*math.atan(1.*y)
+    return math.tanh(5.*x)*math.atan(10.*y)
 
 class PyTorchOnlineTrainer:
-    def __init__(self, robot, nn_model, in_learning_rate = 5e-4, in_momentum = 0.2, Q=np.eye(6), R=np.eye(3)):
+    def __init__(self, robot, nn_model, in_learning_rate = 5e-4, in_momentum = 0.0, Q=np.eye(6), R=np.eye(3)):
 
         self.robot = robot
         self.network = nn_model
@@ -32,7 +32,8 @@ class PyTorchOnlineTrainer:
         self.state = None
         self.error = None
         self.target = None
-        self.u = []
+        self.u = np.zeros(2)
+        self.criteria = np.zeros(2)
         self.state_display = None
 
         ## Modeling
@@ -58,17 +59,18 @@ class PyTorchOnlineTrainer:
         self.Iz = self.robot.inertia[-1]
         
         self.grad_xdk = np.array([[0.                              , 0.                            ],
-                                 [0.                              , 0.                            ],
-                                 [0.                              , 0.                            ],
-                                 [1/(self.m - self.Xudot)         , 1/(self.m - self.Xudot)       ],
-                                 [0.                              , 0.                            ],
-                                 [self.r/(self.Iz - self.Nrdot)   , -self.r/(self.Iz - self.Nrdot)]])
+                                  [0.                              , 0.                            ],
+                                  [0.                              , 0.                            ],
+                                  [1/(self.m - self.Xudot)         , 1/(self.m - self.Xudot)       ],
+                                  [0.                              , 0.                            ],
+                                  [self.r/(self.Iz - self.Nrdot)   , -self.r/(self.Iz - self.Nrdot)]])
 
         self.command_set = False # Make sure inputs have been computed before recording data
         self.gradient_display = np.zeros(2) # Used to display gradient in terminal
         self.input_display = None # Used to display network input in terminal
         self.error_display = None # Used to display error in terminal
         self.delta_t_display = None
+        self.skew = None
 
     def updateTarget(self, in_target):
         self.target = in_target
@@ -79,18 +81,21 @@ class PyTorchOnlineTrainer:
     def computeError(self):
         # Compute error as a column vector
         error = self.state - np.array(self.target).reshape(-1, 1)
-        # self.error[2] -= theta_s(state[0], state[1]) # Yaw skew
+        skew = theta_s(self.state[0], self.state[1])
+        error[2] -= skew # Yaw skew
 
+        self.skew = skew
+        
         return error
 
     def computeNetworkInput(self, error):
         # Weight matrix used for input normalization
-        weight_matrix = np.diag([1/5, 1/5, 1/np.pi, 1, 1, 1])
+        weight_matrix = np.diag([1/10, 1/10, 1/np.pi, 1, 1, 1])
         network_input = weight_matrix @ error
         
         return network_input.ravel()
 
-    def computeGradient(self, delta_t, error, first_order = 1, second_order = 1):
+    def computeGradient(self, delta_t, error, first_order = 0, second_order = 1, alpha1 = 1, alpha2 = 1000):
         cos = np.cos
         sin = np.sin
 
@@ -123,9 +128,9 @@ class PyTorchOnlineTrainer:
                             [(-grad5_A + grad5_B)/fracIzNr                     , (grad5_A + grad5_B)/fracIzNr                      ]]) 
 
         # cost function gradient
-        time_gradient = first_order * delta_t * fod_grad + second_order * delta_t**2/2 * sod_grad #first_order and second_order are meant to be either 0 or 1 to toggle the use of different gradients for testing
+        time_gradient = alpha1 * first_order * delta_t * fod_grad + alpha2 * second_order * 0.5*delta_t**2 * sod_grad #first_order and second_order are meant to be either 0 or 1 to toggle the use of different gradients for testing
 
-        grad = delta_t * (time_gradient.transpose() @ gradxJ) + graduJ
+        grad = (time_gradient.transpose() @ gradxJ) + graduJ
         grad = grad.squeeze(-1) # Removes the dimensions of size 1
 
         return grad
@@ -138,6 +143,8 @@ class PyTorchOnlineTrainer:
 
             error = self.computeError()
             network_input = self.computeNetworkInput(error)
+            # network_input = error.transpose() @ self.Q @ error + self.u.transpose() @ self.R @ self.u
+
 
             # Monitoring data for debugging purposes
             self.state_train_display = self.state
@@ -173,8 +180,13 @@ class PyTorchOnlineTrainer:
 
             # Update error
             error = self.computeError()
-           
-            second_criteria = error.transpose() @ self.Q @ error + self.u.transpose() @ self.R @ self.u
+            
+            crit_x = error.transpose() @ self.Q @ error
+            crit_u = self.u.transpose() @ self.R @ self.u
+            second_criteria = crit_x + crit_u
+
+            self.criteria = np.array([crit_x, crit_u])
+
 
             if self.training:
                 delta_t = (time.time() - start_time)

@@ -57,11 +57,11 @@ class Controller(Node):
 
         ## Initiating variables
         # Network parameters
-        HL_size = 100
+        HL_size = 40
         input_size = 6 # x, y, psi, u, v, r
         output_size = 2 # u1, u2
-        self.learning_rate = 1e-1
-        self.momentum = 0.0 # Portion of the gradient reported to the next one
+        self.learning_rate = 0.1
+        self.momentum = 0.0001 # Portion of the gradient reported to the next one
 
         """
         ################# Weighting matrices meant to be equivalent to MPC
@@ -81,7 +81,7 @@ class Controller(Node):
         """
 
         # Weighting matrices
-        self.Q_weight = np.diag([50, # x
+        self.Q_weight = np.diag([15, # x
                                  50, # y 
                                  40, # psi
                                  1, # u
@@ -89,8 +89,8 @@ class Controller(Node):
                                  1  # r
                                  ])
         
-        self.R_weight = np.diag([0.015, # u1
-                                 0.015  # u2
+        self.R_weight = np.diag([1e-5, # u1
+                                 1e-5  # u2
                                  ])
 
         # Create pytorch network
@@ -101,7 +101,7 @@ class Controller(Node):
 
         # Initiate monitoring data, both stored as .npy and published on a topic
         self.monitoring = []
-        self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2', 'grad1', 'grad2', 't']) # Naming the variables in the first row, useful as is and even more so if data points change between version
+        self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2', 'grad1', 'grad2', 'criteria_X', 'criteria_u', 'skew', 't']) # Naming the variables in the first row, useful as is and even more so if data points change between version
 
         self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
 
@@ -148,7 +148,7 @@ class Controller(Node):
 
             # Weight loading
             if self.get_parameter('load_weights').get_parameter_value().bool_value:
-                with open('last_w_torch.json') as fp:
+                with open('last_w_torch_MVP_momentum.json') as fp:
                     json_obj = json.load(fp)
                 self.network.load_weights_from_json(json_obj, HL_size)
                 
@@ -228,13 +228,17 @@ class Controller(Node):
             y_d_m = target[1]
             psi_d_m = target[2]
 
-            u = self.trainer.u
+            u = self.trainer.u.ravel()
 
             t = self.get_time() - self.t0
 
-            grad = self.trainer.gradient_display
+            grad = self.trainer.gradient_display.ravel()
 
-            data_array = [x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], grad[0], grad[1], t]
+            criteria = self.trainer.criteria.ravel()
+
+            skew = self.trainer.skew
+
+            data_array = [x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], grad[0], grad[1], criteria[0], criteria[1], skew, t]
 
             self.monitoring.append(data_array)
 
@@ -256,15 +260,14 @@ class Controller(Node):
             # self.get_logger().info(f"\n Train target: {self.trainer.target}") 
             # self.get_logger().info(f"\n Train error: {self.trainer.error_display}")
             # self.get_logger().info(f"\n Network input: {self.trainer.input_display}")
+            # self.get_logger().info(f"\n Network input: {self.trainer.skew}")
             
 
         if self.input_string == 'stop': # Stop training session from terminal
+
             self.input_string = ''
             self.trainer.running = False
             self.training_thread.join(timeout=5)
-
-            title = 'data/AI_data/' + self.date +'-AI_data'
-            np.save(title, self.monitoring)
 
             # Save the weights
             json_obj = self.network.save_weights_to_json()
@@ -272,6 +275,11 @@ class Controller(Node):
                 json.dump(json_obj, fp)
 
             self.get_logger().info("Training stopped")
+
+            title = 'data/AI_data/' + self.date +'-AI_data'
+            np.save(title, self.monitoring)
+
+            
 
 rclpy.init()
 node = Controller()

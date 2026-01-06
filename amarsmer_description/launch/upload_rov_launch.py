@@ -11,7 +11,7 @@ sl.declare_arg('gazebo_world_name', 'none')
 sl.declare_arg('thr','thrusters_plasmar2')
 sl.declare_arg('spawn_pose', default_value = "5.0 0.0 0.0 0.0 0.0 0.5")
 
-sl.declare_gazebo_axes(x=-2, y=2, z=0., roll=0.,pitch=0., yaw=-0.5)
+sl.declare_gazebo_axes(x=4, y=4, z=0., roll=0.,pitch=0., yaw=-4)
 # sl.declare_gazebo_axes(x=0., y=0., z=0., roll=0.,pitch=0., yaw=0.)
 def launch_setup():
     
