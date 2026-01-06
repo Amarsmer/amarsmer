@@ -64,7 +64,7 @@ class Controller(Node):
         self.momentum = 0.0001 # Portion of the gradient reported to the next one
 
         """
-        ################# Weighting matrices meant to be equivalent to MPC
+        ################# Reference weighting matrices meant to be equivalent to MPC
 
         # Weighting matrices
         self.Q_weight = np.diag([50, # x
@@ -92,6 +92,7 @@ class Controller(Node):
         self.R_weight = np.diag([1e-5, # u1
                                  1e-5  # u2
                                  ])
+        # TODO The difference of R weight between AI and MPC may come from delta_t applied to the gradient, further investigation required
 
         # Create pytorch network
         self.network = NN(input_size, HL_size, output_size)
@@ -101,7 +102,7 @@ class Controller(Node):
 
         # Initiate monitoring data, both stored as .npy and published on a topic
         self.monitoring = []
-        self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2', 'grad1', 'grad2', 'criteria_X', 'criteria_u', 'skew', 't']) # Naming the variables in the first row, useful as is and even more so if data points change between version
+        self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2', 'grad1', 'grad2', 'loss_X', 'loss_u', 'skew', 't']) # Naming the variables in the first row, useful as is and even more so if data points change between version
 
         self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
 
@@ -138,7 +139,6 @@ class Controller(Node):
         # Display target in gazebo
         target_pose = f.make_pose(target)
         f.create_pose_marker(target_pose, self.pose_arrow_publisher)
-
 
         # Initialize
         if not self.training_initiated: # This code used to be in a while loop and requires adjustements to work as a ROS2 node
@@ -183,7 +183,7 @@ class Controller(Node):
             
             training_thread.join(timeout=5)
             if training_thread.is_alive():
-                print("⚠️ Training thread did not finish in time, continuing anyway")
+                print("Training thread did not finish in time, continuing anyway")
                 
         except KeyboardInterrupt:
             print("\nKeyboard interrupt detected. Stopping training...")
@@ -218,7 +218,7 @@ class Controller(Node):
 
         self.updateRobotState()
 
-        ### Save data for monitoring
+        ### Save and publish data for monitoring
         if self.trainer.command_set: # Make sure the training has started
             x_m = self.rov.current_pose[0]
             y_m = self.rov.current_pose[1]
@@ -234,11 +234,11 @@ class Controller(Node):
 
             grad = self.trainer.gradient_display.ravel()
 
-            criteria = self.trainer.criteria.ravel()
+            loss = self.trainer.loss.ravel()
 
             skew = self.trainer.skew
 
-            data_array = [x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], grad[0], grad[1], criteria[0], criteria[1], skew, t]
+            data_array = [x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], grad[0], grad[1], loss[0], loss[1], skew, t]
 
             self.monitoring.append(data_array)
 

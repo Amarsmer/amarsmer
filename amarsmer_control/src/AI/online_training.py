@@ -5,7 +5,7 @@ import math
 import torch
 import numpy as np
 
-def theta_s(x, y):
+def theta_s(x, y): # Angle skew, used to prevent the singularity in x=0
     return math.tanh(5.*x)*math.atan(10.*y)
 
 class PyTorchOnlineTrainer:
@@ -33,17 +33,17 @@ class PyTorchOnlineTrainer:
         self.error = None
         self.target = None
         self.u = np.zeros(2)
-        self.criteria = np.zeros(2)
+        self.loss = np.zeros(2)
         self.state_display = None
 
         ## Modeling
         # Compute B matrix (constant)
-        self.r = 0.15
+        self.radius = 0.15 # radius of the robot
 
         # NED not yet implemented, so the last row is reversed
         self.B = np.array([[1.        ,1.],
                            [0.        ,0.],
-                           [self.r,-self.r]]) 
+                           [self.radius,-self.radius]]) 
 
         # Coefficients for gradient computation (removes unnecessary temp variable attribution in loop)
         self.m = self.robot.mass
@@ -63,12 +63,14 @@ class PyTorchOnlineTrainer:
                                   [0.                              , 0.                            ],
                                   [1/(self.m - self.Xudot)         , 1/(self.m - self.Xudot)       ],
                                   [0.                              , 0.                            ],
-                                  [self.r/(self.Iz - self.Nrdot)   , -self.r/(self.Iz - self.Nrdot)]])
+                                  [self.radius/(self.Iz - self.Nrdot)   , -self.radius/(self.Iz - self.Nrdot)]])
 
         self.command_set = False # Make sure inputs have been computed before recording data
-        self.gradient_display = np.zeros(2) # Used to display gradient in terminal
-        self.input_display = None # Used to display network input in terminal
-        self.error_display = None # Used to display error in terminal
+
+        # Monitoring variables, meant to be displayed in terminal
+        self.gradient_display = None
+        self.input_display = None 
+        self.error_display = None 
         self.delta_t_display = None
         self.skew = None
 
@@ -84,7 +86,7 @@ class PyTorchOnlineTrainer:
         skew = theta_s(self.state[0], self.state[1])
         error[2] -= skew # Yaw skew
 
-        self.skew = skew
+        self.skew = skew # Monitoring
         
         return error
 
@@ -95,10 +97,7 @@ class PyTorchOnlineTrainer:
         
         return network_input.ravel()
 
-    def computeGradient(self, delta_t, error, first_order = 0, second_order = 1, alpha1 = 1, alpha2 = 1000):
-        cos = np.cos
-        sin = np.sin
-
+    def computeGradient(self, delta_t, error, alpha1 = 0, alpha2 = 1000):
         x,y,psi,u,v,r = self.state.ravel()
 
         gradxJ = 2 * (self.Q @ error)
@@ -106,29 +105,32 @@ class PyTorchOnlineTrainer:
 
         fod_grad = self.grad_xdk # first order derivative gradient
 
-        # second order derivative gradient, done in multiple steps to increase readibility and ease of debugging
+        # second order derivative gradient, done in multiple steps to increase readability and ease of debugging
+        cos = np.cos
+        sin = np.sin
+
         fracmXu = self.m + self.Xudot
         fracmYv = self.m + self.Yvdot
         fracIzNr = self.Iz + self.Nrdot
 
-        grad3_A = self.r*v*(self.m - self.Yvdot)/fracIzNr # each "A" element is dependent on the radius and may need a change of sign when NED is implemented
+        grad3_A = self.radius*v*(self.m - self.Yvdot)/fracIzNr # each "A" element is dependent on the radius and may need a change of sign when NED is implemented
         grad3_B = self.Xu/fracmXu
 
         grad4_A = u*r/fracIzNr
         grad4_B = r/fracmXu
 
-        grad5_A = (self.r*self.Nr)/fracIzNr
+        grad5_A = (self.radius*self.Nr)/fracIzNr
         grad5_B = v*(self.Yvdot-self.Xudot)/fracmXu
 
         sod_grad = np.array([[cos(psi)/fracmXu                                 , cos(psi)/fracmXu                                  ],
                             [sin(psi)/fracmXu                                  , sin(psi)/fracmXu                                  ],
-                            [self.r/fracIzNr                                   , -self.r/fracIzNr                                  ],
+                            [self.radius/fracIzNr                              , -self.radius/fracIzNr                             ],
                             [(-grad3_A + grad3_B)/fracmXu                      , (grad3_A + grad3_B)/fracmXu                       ],
                             [(-grad4_A + grad4_B)*(self.Xudot - self.m)/fracmYv, (grad4_A + grad4_B)*(self.Xudot - self.m)/fracmYv ],
                             [(-grad5_A + grad5_B)/fracIzNr                     , (grad5_A + grad5_B)/fracIzNr                      ]]) 
 
         # cost function gradient
-        time_gradient = alpha1 * first_order * delta_t * fod_grad + alpha2 * second_order * 0.5*delta_t**2 * sod_grad #first_order and second_order are meant to be either 0 or 1 to toggle the use of different gradients for testing
+        time_gradient = alpha1 * delta_t * fod_grad + alpha2 * 0.5*delta_t**2 * sod_grad
 
         grad = (time_gradient.transpose() @ gradxJ) + graduJ
         grad = grad.squeeze(-1) # Removes the dimensions of size 1
@@ -143,13 +145,6 @@ class PyTorchOnlineTrainer:
 
             error = self.computeError()
             network_input = self.computeNetworkInput(error)
-            # network_input = error.transpose() @ self.Q @ error + self.u.transpose() @ self.R @ self.u
-
-
-            # Monitoring data for debugging purposes
-            self.state_train_display = self.state
-            self.error_display = error
-            self.input_display = network_input
             
             # Forward pass - get vector input
             input_tensor = torch.tensor(network_input, dtype=torch.float32)
@@ -165,28 +160,19 @@ class PyTorchOnlineTrainer:
             if not self.command_set: # Used for data recording purposes
                 self.command_set = True
             
-            # Evaluate criteria before moving the robot
             input_coefficient = 40 # The network outputs 1 at max and the thrusters are expected to be able to output 40 newtons
             self.u = input_coefficient * np.array(self.u).reshape(-1, 1)
-
-            first_criteria = error.transpose() @ self.Q @ error + self.u.transpose() @ self.R @ self.u
 
             # Apply control input
             self.robot.move([self.u[0],self.u[1],0,0],
                       [0 for i in range(1,5)])
-            
-            # Wait before evaluating criteria again
-            # time.sleep(0.050)
 
-            # Update error
-            error = self.computeError()
-            
+            # Compute loss, both for monitoring and later for backpropagation
             crit_x = error.transpose() @ self.Q @ error
             crit_u = self.u.transpose() @ self.R @ self.u
-            second_criteria = crit_x + crit_u
+            loss = crit_x + crit_u
 
-            self.criteria = np.array([crit_x, crit_u])
-
+            self.loss = np.array([crit_x, crit_u])
 
             if self.training:
                 delta_t = (time.time() - start_time)
@@ -197,32 +183,26 @@ class PyTorchOnlineTrainer:
 
                 self.gradient_display = grad     
                 
-                # TODO: adapt learning strategy depending on criteria, currently does the same thing either way
+                # TODO: adapt learning strategy depending on loss, currently does the same thing either way
                 # Learning strategy
-                if second_criteria <= first_criteria:
-                    # Do a learning step
-                    self.optimizer.zero_grad()
-                    
-                    # Convert gradient
-                    grad_tensor = torch.tensor(grad, dtype=torch.float32)
-                    
-                    # Do a custom learning step
-                    self.manual_backward(input_tensor, grad_tensor, self.learning_rate, self.optimizer_momentum)
-                else:
-                    # If the criteria does not improve
-                    # Either add noise or learn regardless
-                    self.optimizer.zero_grad()
-                    
-                    # Convert gradient
-                    grad_tensor = torch.tensor(grad, dtype=torch.float32)
-                    
-                    # Do a custom learning step
-                    self.manual_backward(input_tensor, grad_tensor, self.learning_rate, self.optimizer_momentum)
-        
+                # Do a learning step
+                self.optimizer.zero_grad()
+                
+                # Convert gradient
+                grad_tensor = torch.tensor(grad, dtype=torch.float32)
+                
+                # Do a custom learning step
+                self.manual_backward(input_tensor, grad_tensor, self.learning_rate, self.optimizer_momentum)
+
+            # Monitoring data for debugging purposes
+            self.state_train_display = self.state
+            self.error_display = error
+            self.input_display = network_input
+
         # Stop the robot after learning
         self.robot.move([0,0,0,0],
                       [0 for i in range(1,5)])
-        self.running = False
+        # self.running = False
     
     def manual_backward(self, inputs, grad_tensor, learning_rate, momentum):
         # Reset gradients

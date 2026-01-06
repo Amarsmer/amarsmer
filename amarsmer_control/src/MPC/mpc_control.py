@@ -178,10 +178,7 @@ class Controller(Node):
 
     def move(self):
 
-        if not self.rov.parsed():
-            return
-
-        if not self.rov.ready():
+        if not self.rov.parsed() or not self.rov.ready():
             return
 
         if self.controller == None:
