@@ -18,7 +18,7 @@ from visualization_msgs.msg import Marker
 
 # Custom libraries
 from amarsmer_control import ROV
-import functions as f
+import custom_functions as f
 
 # Training specific custom librairies
 from amarsmer_control import ROV
@@ -111,7 +111,7 @@ class Controller(Node):
         return s + ns*1e-9
 
     def odom_callback(self, msg: Odometry):
-        pose, twist = f.odometry(msg)
+        pose, twist = cf.odometry(msg)
 
         self.rov.current_pose = pose
         self.rov.current_twist = twist
@@ -137,8 +137,8 @@ class Controller(Node):
         target = list(map(float, target.split())) # convert a multiple values string to a list
 
         # Display target in gazebo
-        target_pose = f.make_pose(target)
-        f.create_pose_marker(target_pose, self.pose_arrow_publisher)
+        target_pose = cf.make_pose(target)
+        cf.create_pose_marker(target_pose, self.pose_arrow_publisher)
 
         # Initialize
         if not self.training_initiated: # This code used to be in a while loop and requires adjustements to work as a ROS2 node

@@ -9,7 +9,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from amarsmer_interfaces.srv import RequestPath
 import math
-import functions as f
+import custom_functions as f
 
 """
 Creates a services that handle path generation requests. Receives a an array of time values and responds with the associated path.
@@ -137,7 +137,7 @@ class PathGeneration(Node):
             y += dy * surge_speed * t_in_segment
 
         if path_shape == 'seabed_scanning':
-            x,y,z,roll,pitch,yaw = f.seabed_scanning(t)
+            x,y,z,roll,pitch,yaw = cf.seabed_scanning(t)
             x = float(x)
             y = float(y)
             z = 0.0

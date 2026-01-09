@@ -1,14 +1,31 @@
 #!/usr/bin/env python3
 
 import rclpy
-import math
 from rclpy.node import Node
 from geometry_msgs.msg import Pose
 from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 from visualization_msgs.msg import Marker
 from scipy.spatial.transform import Rotation as R
+import numpy as np
+import os
 
+#################### Gazebo interaction ####################
+def pause_gz(pause):
+    os.system(f'gz service -s /world/ocean/control --reqtype gz.msgs.WorldControl --reptype gz.msgs.Boolean --req \'pause: {pause}\' --timeout 1000')
+
+def set_pose_gz(pose):
+    x,y,z,phi,theta,psi = pose.astype(float)
+    qx, qy, qz, qw = R.from_euler('xyz',[phi, theta, psi]).as_quat()
+    
+    pause_gz(True)
+    os.system(f'gz service -s /world/ocean/set_pose --reqtype gz.msgs.Pose --reptype gz.msgs.Boolean --req \'name: "bluerov2" position: {{ x: {x}, y: {y}, z: {z} }} orientation: {{ x: {qx}, y: {qy}, z: {qz}, w: {qw} }}\' --timeout 1000')
+    pause_gz(False)
+
+def set_current_gz(x, y, z):
+    os.system(f'gz topic -t "/ocean_current" -m gz.msgs.Vector3d -p "x: {x}, y: {y}, z: {z}"')
+
+#################### ROS2 msg interaction ####################
 def odometry(msg):
     # Extract pose
     msg_pose = msg.pose.pose
@@ -44,7 +61,6 @@ def odometry(msg):
 
     return pose, twist
 
-
 def make_pose(pose_list):
     x = pose_list[0]
     y = pose_list[1]
@@ -58,8 +74,8 @@ def make_pose(pose_list):
     pose.position.z = 0.0
 
     # Orientation from yaw (theta)
-    qz = math.sin(theta / 2.0)
-    qw = math.cos(theta / 2.0)
+    qz = np.sin(theta / 2.0)
+    qw = np.cos(theta / 2.0)
 
     pose.orientation.x = 0.0
     pose.orientation.y = 0.0
@@ -87,10 +103,8 @@ def create_pose_marker(inPose, inPub):
 
     inPub.publish(marker)
 
-    # return marker
 
-import numpy as np
-
+#################### Trajectory generation ####################
 def seabed_scanning(t):
     """
     Calculate non-differentiated reference positions at a single time t.

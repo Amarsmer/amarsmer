@@ -23,7 +23,7 @@ from urdf_parser_py import urdf
 import ur_mpc
 from amarsmer_control import ROV
 from amarsmer_interfaces.srv import RequestPath
-import functions as f
+import custom_functions as cf
 
 class Controller(Node):
     def __init__(self):
@@ -86,7 +86,7 @@ class Controller(Node):
         return s + ns*1e-9
 
     def odom_callback(self, msg: Odometry):
-        pose, twist = f.odometry(msg)
+        pose, twist = cf.odometry(msg)
 
         self.rov.current_pose = pose
         self.rov.current_twist = twist
@@ -152,7 +152,7 @@ class Controller(Node):
         if self.mpc_path.poses: # Make sure the path is not empty
 
             desired_pose = self.mpc_path.poses[0].pose
-            f.create_pose_marker(desired_pose, self.pose_arrow_publisher) # Display the current desired pose
+            cf.create_pose_marker(desired_pose, self.pose_arrow_publisher) # Display the current desired pose
 
             tau = self.controller.solve(path=self.mpc_path, x_current=x_current)
 

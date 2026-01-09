@@ -33,7 +33,7 @@ install(PROGRAMS src/_custom_libraries/path_publisher.py
         DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS src/_custom_libraries/path_generation.py
         DESTINATION lib/${PROJECT_NAME})
-        install(PROGRAMS src/_custom_libraries/functions.py
+        install(PROGRAMS src/_custom_libraries/custom_functions.py
         DESTINATION lib/${PROJECT_NAME})
 
 ament_python_install_package(${PROJECT_NAME})

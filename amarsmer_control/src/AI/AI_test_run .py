@@ -24,7 +24,7 @@ from hydrodynamic_model import hydrodynamic
 import ur_mpc
 from amarsmer_control import ROV
 from amarsmer_interfaces.srv import RequestPath
-import functions as f
+import custom_functions as f
 
 import torch
 import json
@@ -103,7 +103,7 @@ class Controller(Node):
         return s + ns*1e-9
 
     def odom_callback(self, msg: Odometry):
-        pose, twist = f.odometry(msg)
+        pose, twist = cf.odometry(msg)
 
         self.rov.current_pose = pose
         self.rov.current_twist = twist
@@ -121,8 +121,8 @@ class Controller(Node):
         target = self.get_parameter('target').get_parameter_value().string_value
         target = list(map(float, target.split())) # convert a multiple values string to a list
 
-        target_pose = f.make_pose(target)
-        f.create_pose_marker(target_pose, self.pose_arrow_publisher)
+        target_pose = cf.make_pose(target)
+        cf.create_pose_marker(target_pose, self.pose_arrow_publisher)
 
         if not self.training_initiated:
             self.training_initiated = True
@@ -229,7 +229,7 @@ class Controller(Node):
         # TODO: extract target from pose request
         # next_pose = self.ai_path.poses[0]
 
-        # full_target = f.extract_pose(next_pose)
+        # full_target = cf.extract_pose(next_pose)
         # target = [full_target[x] for x in [0,1,5]]
 
         # self.trainer.target = target

@@ -22,7 +22,7 @@ from urdf_parser_py import urdf
 import full_mpc as mpc
 from amarsmer_control import ROV
 from amarsmer_interfaces.srv import RequestPath
-import functions as f
+import custom_functions as f
 
 class Controller(Node):
     def __init__(self):
@@ -181,7 +181,7 @@ class Controller(Node):
         if not self.rov.parsed() or not self.rov.ready():
             return
 
-        if self.controller == None:
+        if self.controller == None: # Initialize controller
             self.controller = mpc.MPCController(robot_mass = self.rov.mass,
                                             inertia = self.rov.inertia,
                                             rg = self.rov.rg,
