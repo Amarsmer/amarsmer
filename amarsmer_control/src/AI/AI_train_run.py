@@ -38,7 +38,7 @@ class Controller(Node):
         super().__init__('ai_control', namespace='amarsmer')
 
         # self.declare_parameter('name', 'data')
-        self.declare_parameter('load_weights', True)
+        self.declare_parameter('load_weights', False)
         self.declare_parameter('train', True)
         self.declare_parameter('continue_running', True)
         self.declare_parameter('target', '0 0 0 0 0 0')

@@ -97,7 +97,7 @@ class PyTorchOnlineTrainer:
         
         return network_input.ravel()
 
-    def computeGradient(self, delta_t, error, alpha1 = 0, alpha2 = 1000):
+    def computeGradient(self, delta_t, error, alpha1 = 1, alpha2 = 1000):
         x,y,psi,u,v,r = self.state.ravel()
 
         gradxJ = 2 * (self.Q @ error)
