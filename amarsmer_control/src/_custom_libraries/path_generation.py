@@ -37,6 +37,15 @@ class PathGeneration(Node):
 
         # Normalize t
         # t = (t / self.total_time) * total_length
+
+        if path_shape == 'station_keeping':
+            x = 0.0
+            y = 0.0
+            z = 0.0
+            roll = 0.0
+            pitch = 0.0
+            yaw = 0.0
+        
         if path_shape == 'circle':
             # Circle
             t *= 0.08
