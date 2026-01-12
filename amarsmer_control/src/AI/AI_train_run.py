@@ -9,6 +9,7 @@ import rclpy
 import time
 import numpy as np
 from datetime import datetime
+import os
 
 # ROS2 msg libraries
 from std_msgs.msg import String, Float32, Float32MultiArray
@@ -18,7 +19,7 @@ from visualization_msgs.msg import Marker
 
 # Custom libraries
 from amarsmer_control import ROV
-import custom_functions as f
+import custom_functions as cf
 
 # Training specific custom librairies
 from amarsmer_control import ROV
@@ -37,7 +38,7 @@ class Controller(Node):
         super().__init__('ai_control', namespace='amarsmer')
 
         # self.declare_parameter('name', 'data')
-        self.declare_parameter('load_weights', False)
+        self.declare_parameter('load_weights', True)
         self.declare_parameter('train', True)
         self.declare_parameter('continue_running', True)
         self.declare_parameter('target', '0 0 0 0 0 0')
@@ -148,9 +149,13 @@ class Controller(Node):
 
             # Weight loading
             if self.get_parameter('load_weights').get_parameter_value().bool_value:
-                with open('last_w_torch_MVP_momentum.json') as fp:
+                dir_path = os.path.dirname(os.path.realpath(__file__))
+
+                with open('/home/noe/ros2_ws/saved_weights/last_w_torch_MVP_momentum.json') as fp:
                     json_obj = json.load(fp)
-                self.network.load_weights_from_json(json_obj, HL_size)
+                    HL_load_size = len(json_obj["input_weights"][0][:])
+                    # self.get_logger().info(f"json = {HL_load_size}")
+                self.network.load_weights_from_json(json_obj, HL_load_size)
                 
             # Initialize trainer
             self.trainer = PyTorchOnlineTrainer(self.rov, self.network, self.learning_rate, self.momentum, self.Q_weight, self.R_weight)

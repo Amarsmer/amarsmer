@@ -106,6 +106,19 @@ class ROV:
                 wrench_msg.wrench.torque.z = 0.0
                 self.wrench_pub[i].publish(wrench_msg)
 
+            # Base link (used to easily see the robot's orientation)
+            wrench_msg = WrenchStamped()
+            wrench_msg.header.frame_id = "amarsmer/base_link"
+            wrench_msg.wrench.force.x = 10.0
+            wrench_msg.wrench.force.y = 0.0
+            wrench_msg.wrench.force.z = 0.0
+            wrench_msg.wrench.torque.x = 0.0
+            wrench_msg.wrench.torque.y = 0.0
+            wrench_msg.wrench.torque.z = 0.0
+            self.wrench_pub[-1].publish(wrench_msg)
+
+            
+
     def read_model(self, msg):
 
         if len(self.joints):
@@ -120,6 +133,8 @@ class ROV:
             self.thruster_pub.append(self.node.create_publisher(Float64, 'cmd_'+thr, 1))
             # Wrench publishers, used to display thrusters,
             self.wrench_pub.append(self.node.create_publisher(WrenchStamped, 'amarsmer_' + thr + '_wrench', 1))
+
+        self.wrench_pub.append(self.node.create_publisher(WrenchStamped, 'amarsmer_base', 1))
 
         # print('Thrusters:', thrusters)
 

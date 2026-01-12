@@ -25,7 +25,7 @@ def set_pose_gz(pose):
 def set_current_gz(x, y, z):
     os.system(f'gz topic -t "/ocean_current" -m gz.msgs.Vector3d -p "x: {x}, y: {y}, z: {z}"')
 
-#################### ROS2 msg interaction ####################
+#################### ROS2 interaction ####################
 def odometry(msg):
     # Extract pose
     msg_pose = msg.pose.pose

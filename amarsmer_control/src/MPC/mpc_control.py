@@ -22,7 +22,7 @@ from urdf_parser_py import urdf
 import full_mpc as mpc
 from amarsmer_control import ROV
 from amarsmer_interfaces.srv import RequestPath
-import custom_functions as f
+import custom_functions as cf
 
 class Controller(Node):
     def __init__(self):

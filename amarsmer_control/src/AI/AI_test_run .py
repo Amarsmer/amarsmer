@@ -24,7 +24,7 @@ from hydrodynamic_model import hydrodynamic
 import ur_mpc
 from amarsmer_control import ROV
 from amarsmer_interfaces.srv import RequestPath
-import custom_functions as f
+import custom_functions as cf
 
 import torch
 import json
