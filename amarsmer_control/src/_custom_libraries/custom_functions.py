@@ -19,7 +19,7 @@ def set_pose_gz(pose):
     qx, qy, qz, qw = R.from_euler('xyz',[phi, theta, psi]).as_quat()
     
     pause_gz(True)
-    os.system(f'gz service -s /world/ocean/set_pose --reqtype gz.msgs.Pose --reptype gz.msgs.Boolean --req \'name: "bluerov2" position: {{ x: {x}, y: {y}, z: {z} }} orientation: {{ x: {qx}, y: {qy}, z: {qz}, w: {qw} }}\' --timeout 1000')
+    os.system(f'gz service -s /world/ocean/set_pose --reqtype gz.msgs.Pose --reptype gz.msgs.Boolean --req \'name: "amarsmer" position: {{ x: {x}, y: {y}, z: {z} }} orientation: {{ x: {qx}, y: {qy}, z: {qz}, w: {qw} }}\' --timeout 1000')
     pause_gz(False)
 
 def set_current_gz(x, y, z):

@@ -38,7 +38,7 @@ class Controller(Node):
         super().__init__('ai_control', namespace='amarsmer')
 
         # self.declare_parameter('name', 'data')
-        self.declare_parameter('load_weights', True)
+        self.declare_parameter('load_weights', False)
         self.declare_parameter('train', True)
         self.declare_parameter('continue_running', True)
         self.declare_parameter('target', '0 0 0 0 0 0')
@@ -219,6 +219,9 @@ class Controller(Node):
 
         self.updateRobotState()
 
+        if self.trainer.loss is not None and self.trainer.loss < 1.:
+            cf.set_pose_gz(np.array((4.0,4.0,0.0,0.0,0.0,0.0)))
+
         ### Save and publish data for monitoring
         if self.trainer.command_set: # Make sure the training has started
             x_m = self.rov.current_pose[0]
@@ -230,14 +233,10 @@ class Controller(Node):
             psi_d_m = target[2]
 
             u = self.trainer.u.ravel()
-
-            t = self.get_time() - self.t0
-
             grad = self.trainer.gradient_display.ravel()
-
-            loss = self.trainer.loss.ravel()
-
+            loss = self.trainer.loss_display.ravel()
             skew = self.trainer.skew
+            t = self.get_time() - self.t0
 
             data_array = [x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], grad[0], grad[1], loss[0], loss[1], skew, t]
 

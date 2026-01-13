@@ -33,8 +33,7 @@ class PyTorchOnlineTrainer:
         self.error = None
         self.target = None
         self.u = np.zeros(2)
-        self.loss = np.zeros(2)
-        self.state_display = None
+        self.loss = None
 
         ## Modeling
         # Compute B matrix (constant)
@@ -73,6 +72,8 @@ class PyTorchOnlineTrainer:
         self.error_display = None 
         self.delta_t_display = None
         self.skew = None
+        self.state_display = None
+        self.loss_display = np.zeros(2)
 
     def updateTarget(self, in_target):
         self.target = in_target
@@ -97,7 +98,7 @@ class PyTorchOnlineTrainer:
         
         return network_input.ravel()
 
-    def computeGradient(self, delta_t, error, alpha1 = 1, alpha2 = 1000):
+    def computeGradient(self, delta_t, error, alpha1 = 0, alpha2 = 1000):
         x,y,psi,u,v,r = self.state.ravel()
 
         gradxJ = 2 * (self.Q @ error)
@@ -170,9 +171,9 @@ class PyTorchOnlineTrainer:
             # Compute loss, both for monitoring and later for backpropagation
             crit_x = error.transpose() @ self.Q @ error
             crit_u = self.u.transpose() @ self.R @ self.u
-            loss = crit_x + crit_u
+            self.loss = crit_x + crit_u
 
-            self.loss = np.array([crit_x, crit_u])
+            self.loss_display = np.array([crit_x, crit_u])
 
             if self.training:
                 delta_t = (time.time() - start_time)
