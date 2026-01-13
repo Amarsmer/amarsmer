@@ -38,7 +38,7 @@ class Controller(Node):
         super().__init__('ai_control', namespace='amarsmer')
 
         # self.declare_parameter('name', 'data')
-        self.declare_parameter('load_weights', False)
+        self.declare_parameter('load_weights', True)
         self.declare_parameter('train', True)
         self.declare_parameter('continue_running', True)
         self.declare_parameter('target', '0 0 0 0 0 0')
@@ -149,13 +149,9 @@ class Controller(Node):
 
             # Weight loading
             if self.get_parameter('load_weights').get_parameter_value().bool_value:
-                dir_path = os.path.dirname(os.path.realpath(__file__))
-
                 with open('/home/noe/ros2_ws/saved_weights/last_w_torch_MVP_momentum.json') as fp:
                     json_obj = json.load(fp)
-                    HL_load_size = len(json_obj["input_weights"][0][:])
-                    # self.get_logger().info(f"json = {HL_load_size}")
-                self.network.load_weights_from_json(json_obj, HL_load_size)
+                self.network.load_weights_from_json(json_obj)
                 
             # Initialize trainer
             self.trainer = PyTorchOnlineTrainer(self.rov, self.network, self.learning_rate, self.momentum, self.Q_weight, self.R_weight)

@@ -63,7 +63,7 @@ Visualization Manager:
         Expand Tree: false
         Link Tree Style: Links in Alphabetic Order
         amarsmer/base_link:
-          Alpha: 1
+          Alpha: 0.7
           Show Axes: false
           Show Trail: false
           Value: true
@@ -166,7 +166,7 @@ Visualization Manager:
       Axes Radius: 0.10000000149011612
       Class: rviz_default_plugins/Wrench
       Enabled: true
-      Force Arrow Scale: 0.1
+      Force Arrow Scale: 0.04
       Force Color: 0; 255; 0
       History Length: 1
       Name: Base
@@ -178,6 +178,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /amarsmer/amarsmer_base
       Torque Arrow Scale: 0.2
+      Arrow Width: 0.3
       Torque Color: 255; 0; 0
       Value: true
     - Accept NaN Values: false

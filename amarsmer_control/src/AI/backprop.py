@@ -43,8 +43,9 @@ class NN(nn.Module):
             outputs = self.forward(x)
             return outputs.tolist()
     
-    def load_weights_from_json(self, json_obj, hidden_size):
+    def load_weights_from_json(self, json_obj):
         # Load weights from a JSON file
+        hidden_size = len(json_obj["input_weights"][0][:])
 
         # Convert input weights in pytorch tensors
         input_weights = torch.zeros(self.input_size, hidden_size)
