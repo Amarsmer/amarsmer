@@ -158,9 +158,6 @@ class PyTorchOnlineTrainer:
                 with torch.no_grad():
                     self.u = self.network(input_tensor).tolist()
             
-            if not self.command_set: # Used for data recording purposes
-                self.command_set = True
-            
             input_coefficient = 40 # The network outputs 1 at max and the thrusters are expected to be able to output 40 newtons
             self.u = input_coefficient * np.array(self.u).reshape(-1, 1)
 
@@ -174,6 +171,9 @@ class PyTorchOnlineTrainer:
             self.loss = crit_x + crit_u
 
             self.loss_display = np.array([crit_x, crit_u])
+
+            if not self.command_set: # Used for data recording purposes
+                self.command_set = True
 
             if self.training:
                 delta_t = (time.time() - start_time)

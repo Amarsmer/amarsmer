@@ -200,6 +200,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /amarsmer/amarsmer_thruster1_wrench
       Torque Arrow Scale: 0.2
+      Arrow Width: 0.3
       Torque Color: 255; 0; 0
       Value: true
     - Accept NaN Values: false
@@ -220,6 +221,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /amarsmer/amarsmer_thruster2_wrench
       Torque Arrow Scale: 0.2
+      Arrow Width: 0.3
       Torque Color: 255; 0; 0
       Value: true
     - Accept NaN Values: false
@@ -239,6 +241,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /amarsmer/amarsmer_thruster3_wrench
       Torque Arrow Scale: 0.2
+      Arrow Width: 0.3
       Torque Color: 204; 204; 51
       Value: true
     - Accept NaN Values: false
@@ -259,6 +262,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /amarsmer/amarsmer_thruster4_wrench
       Torque Arrow Scale: 0.2
+      Arrow Width: 0.3
       Torque Color: 255; 0; 0
       Value: true
     - Accept NaN Values: false

@@ -101,6 +101,17 @@ class Controller(Node):
         self.trainer = None
         self.training_initiated = False
 
+        # Test automation
+        self.loss_threshold = 2.
+        self.previous_loss = 1e10 # Initialized at an arbitrarily high value instead of None to reduce the number of if statements
+        self.minimal_loss_timer = None
+        self.acceptable_loss_delay = 10.
+        self.pose_index = 0
+        self.initial_poses = [np.array([4., 4., 0., 0., 0., 1.]),
+                              np.array([-4., -4., 0., 0., 0., 4.]),
+                              np.array([4., -4., 0., 0., 0., 1.]),
+                              np.array([-4., -4., 0., 0., 0., 4.])]
+
         # Initiate monitoring data, both stored as .npy and published on a topic
         self.monitoring = []
         self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2', 'grad1', 'grad2', 'loss_X', 'loss_u', 'skew', 't']) # Naming the variables in the first row, useful as is and even more so if data points change between version
@@ -219,8 +230,22 @@ class Controller(Node):
 
         self.updateRobotState()
 
-        if self.trainer.loss is not None and self.trainer.loss < 1.:
-            cf.set_pose_gz(np.array((4.0,4.0,0.0,0.0,0.0,0.0)))
+        ### Training automation
+        if self.trainer.loss is not None: # Make sure the loss has been initialized
+            current_time = self.get_time()
+
+            # Detect when loss is below threshold (edge detection)
+            if self.trainer.loss < self.loss_threshold and self.previous_loss >= self.loss_threshold :
+                self.minimal_loss_timer = current_time
+
+            # Change robot's pose after loss remains under threshold for a set time AND the list of pose has not been parsed
+            if self.minimal_loss_timer is not None and (current_time - self.minimal_loss_timer) > self.acceptable_loss_delay:
+                    cf.set_pose_gz(self.initial_poses[self.pose_index])
+                    self.pose_index += 1
+                    self.pose_index %= len(self.initial_poses) # Makes sure the index wraps around instead of getting outside of the list
+                    self.minimal_loss_timer = None
+
+            self.previous_loss = self.trainer.loss
 
         ### Save and publish data for monitoring
         if self.trainer.command_set: # Make sure the training has started
