@@ -61,7 +61,7 @@ class Controller(Node):
         HL_size = 40
         input_size = 6 # x, y, psi, u, v, r
         output_size = 2 # u1, u2
-        self.learning_rate = 0.1
+        self.learning_rate = 5e-4
         self.momentum = 0.0001 # Portion of the gradient reported to the next one
 
         """

@@ -26,8 +26,7 @@ class PyTorchOnlineTrainer:
         self.optimizer_momentum = in_momentum
 
         # Set up optimizer (partially replaces backpropagation)
-        self.optimizer = torch.optim.AdamW(self.network.parameters(), 
-                                          lr=self.learning_rate)
+        self.optimizer = torch.optim.SGD(self.network.parameters(), lr=self.learning_rate, momentum=self.optimizer_momentum)
 
         # Variables init
         self.state = None
@@ -148,25 +147,23 @@ class PyTorchOnlineTrainer:
             error = self.computeError()
             network_input = self.computeNetworkInput(error)
             
-            # Prepare input
-            input_tensor = torch.tensor(network_input, dtype=torch.float32, requires_grad=self.training)
-
-            # Forward pass
+            # Forward pass - get vector input
+            input_tensor = torch.tensor(network_input, dtype=torch.float32)
             if self.training:
-                u_tensor = self.network(input_tensor)
+                # Use gradient when training
+                input_tensor.requires_grad_(True)
+                self.u = self.network(input_tensor).tolist()
             else:
+                # No gradients otherwise
                 with torch.no_grad():
-                    u_tensor = self.network(input_tensor)
+                    self.u = self.network(input_tensor).tolist()
+            
+            input_coefficient = 40 # The network outputs 1 at max and the thrusters are expected to be able to output 40 newtons
+            self.u = input_coefficient * np.array(self.u).reshape(-1, 1)
 
-            # Scale output
-            input_coefficient = 40.0
-            u_tensor = input_coefficient * u_tensor
-
-            # Apply control input (convert ONLY for the robot)
-            self.u = u_tensor.detach().cpu().numpy().reshape(-1, 1)
-            self.robot.move([self.u[0], self.u[1], 0, 0],
-                            [0 for i in range(1, 5)])
-
+            # Apply control input
+            self.robot.move([self.u[0],self.u[1],0,0],
+                      [0 for i in range(1,5)])
 
             # Compute loss, both for monitoring and later for backpropagation
             crit_x = error.transpose() @ self.Q @ error
@@ -178,25 +175,25 @@ class PyTorchOnlineTrainer:
             if not self.command_set: # Used for data recording purposes
                 self.command_set = True
 
-            ### Training step
             if self.training:
                 delta_t = (time.time() - start_time)
+
                 self.delta_t_display = delta_t
 
-                # Manual gradient computation
                 grad = self.computeGradient(delta_t, error)
-                self.gradient_display = grad
+
+                self.gradient_display = grad     
                 
-                # Convert to tensor grad
-                grad_tensor = torch.tensor(grad, dtype=torch.float32)
-
-                # Normalize magnitude, preserve direction
-                # grad_tensor = grad_tensor / (grad_tensor.norm() + 1e-6)
-
-                # Backprop using external gradient
+                # TODO: adapt learning strategy depending on loss, currently does the same thing either way
+                # Learning strategy
+                # Do a learning step
                 self.optimizer.zero_grad()
-                u_tensor.backward(gradient=grad_tensor)
-                self.optimizer.step()
+                
+                # Convert gradient
+                grad_tensor = torch.tensor(grad, dtype=torch.float32)
+                
+                # Do a custom learning step
+                self.manual_backward(input_tensor, grad_tensor, self.learning_rate, self.optimizer_momentum)
 
             # Monitoring data for debugging purposes
             self.state_train_display = self.state
