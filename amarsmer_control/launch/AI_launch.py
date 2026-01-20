@@ -8,11 +8,11 @@ def generate_launch_description():
 
     sl.include('amarsmer_description', 'world_launch.py', launch_arguments={'sliders': False})
 
-    # sl.node('amarsmer_control', 'path_generation.py')
+    sl.node('amarsmer_control', 'path_generation.py')
 
-    # sl.node('amarsmer_control', 'path_publisher.py')
+    sl.node('amarsmer_control', 'path_publisher.py')
 
-    sl.node('amarsmer_control', 'AI_train_run.py')
+    sl.node('amarsmer_control', 'AI_run.py')
 
     """
     layout_file = str(Path(__file__).parents[2] / "plotJuggler_2D_BP_monitoring.xml")

@@ -20,6 +20,7 @@ from visualization_msgs.msg import Marker
 # Custom libraries
 from amarsmer_control import ROV
 import custom_functions as cf
+from amarsmer_interfaces.srv import RequestPath
 
 # Training specific custom librairies
 from amarsmer_control import ROV
@@ -43,6 +44,7 @@ class Controller(Node):
         self.declare_parameter('continue_running', True)
         self.declare_parameter('target', '0 0 0 0 0 0')
         self.input_string = ''
+        self.ai_path = Path()
 
         self.rov = ROV(self, thrust_visual = True)
 
@@ -53,16 +55,24 @@ class Controller(Node):
 
         self.data_publisher = self.create_publisher(Float32MultiArray, "/monitoring_data", 10)
         self.network_publisher = self.create_publisher(Float32MultiArray, "/network_data", 10)
+        
+        self.dt = 0.01
+        self.timer = self.create_timer(self.dt, self.run)
 
-        self.timer = self.create_timer(0.1, self.run)
+        self.future = None # Used for client requests
 
-        ## Initiating variables
+        # Create a client for path request
+        self.client = self.create_client(RequestPath, '/path_request')
+
+        while not self.client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info("Waiting for service...")
+
+        ### Initiating variables
         # Network parameters
         HL_size = 40
         input_size = 6 # x, y, psi, u, v, r
         output_size = 2 # u1, u2
-        self.learning_rate = 5e-4
-        self.momentum = 0.0001 # Portion of the gradient reported to the next one
+        self.learning_rate = 1e-4
 
         """
         ################# Reference weighting matrices meant to be equivalent to MPC
@@ -102,15 +112,17 @@ class Controller(Node):
         self.training_initiated = False
 
         # Test automation
-        self.loss_threshold = 2.
+        self.loss_threshold = 20.
         self.previous_loss = 1e10 # Initialized at an arbitrarily high value instead of None to reduce the number of if statements
         self.minimal_loss_timer = None
-        self.acceptable_loss_delay = 10.
+        self.acceptable_loss_delay = 10. # If the loss is below the threshold for this amount of second, the robot is moved
         self.pose_index = 0
         self.initial_poses = [np.array([4., 4., 0., 0., 0., 1.]),
                               np.array([-4., -4., 0., 0., 0., 4.]),
                               np.array([4., -4., 0., 0., 0., 1.]),
                               np.array([-4., -4., 0., 0., 0., 4.])]
+
+        self.current_time = self.get_time()
 
         # Initiate monitoring data, both stored as .npy and published on a topic
         self.monitoring = []
@@ -127,6 +139,41 @@ class Controller(Node):
 
         self.rov.current_pose = pose
         self.rov.current_twist = twist
+
+    def compute_target(self, path):
+
+        def get_yaw_from_quaternion(q):
+            siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+            cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+            return np.arctan2(siny_cosp, cosy_cosp)
+
+        # Extract current target and next step target
+        poses = path.poses[:2]
+        present = poses[0].pose
+        future = poses[1].pose
+
+        # Compute position
+        x = future.position.x
+        y = future.position.y
+        psi = get_yaw_from_quaternion(future.orientation)
+        psi = (psi + np.pi) % (2 * np.pi) - np.pi
+
+        # Compute speeds
+        dx = x - present.position.x
+        dy = y - present.position.y
+        u = np.hypot(dx, dy) / self.dt
+
+        psi_prev = get_yaw_from_quaternion(present.orientation)
+
+        psi_mid = (psi + psi_prev) / 2.0
+        dx_b =  np.cos(psi_mid) * dx + np.sin(psi_mid) * dy
+        dy_b = -np.sin(psi_mid) * dx + np.cos(psi_mid) * dy
+        v = dy_b / self.dt 
+
+        dpsi = (psi - psi_prev + np.pi) % (2 * np.pi) - np.pi
+        r = dpsi / self.dt
+        
+        return [x, y, psi, u, v, r]
     
     def str_input_callback(self, msg: String):
         self.input_string = msg.data
@@ -142,17 +189,14 @@ class Controller(Node):
         self.trainer.updateState(self.state)
 
     def run(self):
+        ### Wait for the robot model to be initialized
         if not self.rov.ready():
             return
-        
-        target = self.get_parameter('target').get_parameter_value().string_value
-        target = list(map(float, target.split())) # convert a multiple values string to a list
 
-        # Display target in gazebo
-        target_pose = cf.make_pose(target)
-        cf.create_pose_marker(target_pose, self.pose_arrow_publisher)
+        # Update time
+        self.current_time = self.get_time()
 
-        # Initialize
+        ### Initialize
         if not self.training_initiated: # This code used to be in a while loop and requires adjustements to work as a ROS2 node
             self.training_initiated = True
 
@@ -160,12 +204,12 @@ class Controller(Node):
 
             # Weight loading
             if self.get_parameter('load_weights').get_parameter_value().bool_value:
-                with open('/home/noe/ros2_ws/saved_weights/last_w_torch_MVP_momentum.json') as fp:
+                with open('/home/noe/ros2_ws/saved_weights/adam_2.json') as fp:
                     json_obj = json.load(fp)
                 self.network.load_weights_from_json(json_obj)
                 
             # Initialize trainer
-            self.trainer = PyTorchOnlineTrainer(self.rov, self.network, self.learning_rate, self.momentum, self.Q_weight, self.R_weight)
+            self.trainer = PyTorchOnlineTrainer(self.rov, self.network, self.learning_rate, self.Q_weight, self.R_weight)
 
             train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
 
@@ -174,14 +218,49 @@ class Controller(Node):
             session_count = 0
             session_count += 1
 
+            self.target = self.get_parameter('target').get_parameter_value().string_value
+            self.target = list(map(float, self.target.split())) # convert a multiple values string to a list
+
             self.updateRobotState() # The trainer thread requires manual update of the robot's pose and twist
-            self.trainer.updateTarget(target) # To be used for trajectory tracking
+            self.trainer.updateTarget(self.target) # To be used for trajectory tracking
 
             self.get_logger().info(f"\n Starting training session #{session_count}")
 
-            self.training_thread = threading.Thread(target=self.trainer.train, args=(target,)) # Start training process on a separate thread
+            self.training_thread = threading.Thread(target=self.trainer.train, args=(self.target,)) # Start training process on a separate thread
             self.trainer.running = True
             self.training_thread.start()
+
+        ### Request Path
+        # Check if previous future is still pending
+        if self.future is not None:
+            if self.future.done():
+                try:
+                    result = self.future.result()
+                    if result is not None:
+                        self.ai_path = result.path
+                        # self.get_logger().info(f"Received path with {len(self.mpc_path.poses)} poses.")
+                    else:
+                        self.get_logger().error("Service returned None.")
+                except Exception as e:
+                    self.get_logger().error(f"Service call raised exception: {e}")
+                finally:
+                    self.future = None
+                return
+
+        # Send new request
+        request = RequestPath.Request()
+        request.path_request.data = np.linspace(self.current_time, self.current_time + self.dt, 2, dtype=float)
+
+        self.future = self.client.call_async(request)
+
+        if self.ai_path.poses: # Make sure the path is not empty
+
+            self.target = self.compute_target(self.ai_path)
+            self.trainer.updateTarget(self.target)
+
+            # Display target in gazebo
+            target_pose = cf.make_pose(self.target)
+            cf.create_pose_marker(target_pose, self.pose_arrow_publisher)
         
         #TODO: add flexibility to run multiple training sessions
         """
@@ -232,14 +311,13 @@ class Controller(Node):
 
         ### Training automation
         if self.trainer.loss is not None: # Make sure the loss has been initialized
-            current_time = self.get_time()
 
             # Detect when loss is below threshold (edge detection)
             if self.trainer.loss < self.loss_threshold and self.previous_loss >= self.loss_threshold :
-                self.minimal_loss_timer = current_time
+                self.minimal_loss_timer = self.current_time
 
             # Change robot's pose after loss remains under threshold for a set time AND the list of pose has not been parsed
-            if self.minimal_loss_timer is not None and (current_time - self.minimal_loss_timer) > self.acceptable_loss_delay:
+            if self.trainer.running == True and self.minimal_loss_timer is not None and (self.current_time - self.minimal_loss_timer) > self.acceptable_loss_delay:
                     cf.set_pose_gz(self.initial_poses[self.pose_index])
                     self.pose_index += 1
                     self.pose_index %= len(self.initial_poses) # Makes sure the index wraps around instead of getting outside of the list
@@ -253,9 +331,9 @@ class Controller(Node):
             y_m = self.rov.current_pose[1]
             psi_m = self.rov.current_pose[5]
 
-            x_d_m = target[0]
-            y_d_m = target[1]
-            psi_d_m = target[2]
+            x_d_m = self.target[0]
+            y_d_m = self.target[1]
+            psi_d_m = self.target[2]
 
             u = self.trainer.u.ravel()
             grad = self.trainer.gradient_display.ravel()

@@ -26,7 +26,7 @@ class PathGeneration(Node):
         # Service
         self.path_service = self.create_service(RequestPath, '/path_request', self.generate_path)
 
-    def single_pose(self, t: float, path_shape = 'kin_square') -> PoseStamped:
+    def single_pose(self, t: float, path_shape = 'station_keeping') -> PoseStamped:
         """
         Generate a helical pose for a given time t.
         """
@@ -170,7 +170,7 @@ class PathGeneration(Node):
 
         return pose
 
-    def generate_path(self, request, response):
+    def generate_path(self, request, response, path_shape = 'sin'):
         if self.display_log:
             self.get_logger().info(f"Received path_request of type: {type(request.path_request)}")
 
@@ -178,7 +178,7 @@ class PathGeneration(Node):
         path_msg.header.frame_id = 'world'
 
         for t in request.path_request.data:
-            temp_pose = self.single_pose(t)
+            temp_pose = self.single_pose(t, path_shape)
             temp_pose.header.stamp = self.get_clock().now().to_msg()
             path_msg.poses.append(temp_pose)
 

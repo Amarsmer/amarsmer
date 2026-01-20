@@ -9,7 +9,7 @@ def theta_s(x, y): # Angle skew, used to prevent the singularity in x=0
     return math.tanh(5.*x)*math.atan(10.*y)
 
 class PyTorchOnlineTrainer:
-    def __init__(self, robot, nn_model, in_learning_rate = 5e-4, in_momentum = 0.0, Q=np.eye(6), R=np.eye(3)):
+    def __init__(self, robot, nn_model, in_learning_rate = 5e-4, Q=np.eye(6), R=np.eye(3)):
 
         self.robot = robot
         self.network = nn_model
@@ -23,10 +23,9 @@ class PyTorchOnlineTrainer:
         self.training = True
 
         self.learning_rate = in_learning_rate
-        self.optimizer_momentum = in_momentum
 
         # Set up optimizer (partially replaces backpropagation)
-        self.optimizer = torch.optim.AdamW(self.network.parameters(), 
+        self.optimizer = torch.optim.Adam(self.network.parameters(), 
                                           lr=self.learning_rate)
 
         # Variables init
@@ -45,7 +44,7 @@ class PyTorchOnlineTrainer:
                            [0.        ,0.],
                            [self.radius,-self.radius]]) 
 
-        # Coefficients for gradient computation (removes unnecessary temp variable attribution in loop)
+        # Coefficients for gradient computation (reduces unnecessary temp variable attribution in loop since it's constant)
         self.m = self.robot.mass
 
         self.Xudot = self.robot.added_masses[0]
@@ -207,19 +206,3 @@ class PyTorchOnlineTrainer:
         self.robot.move([0,0,0,0],
                       [0 for i in range(1,5)])
         # self.running = False
-    
-    def manual_backward(self, inputs, grad_tensor, learning_rate, momentum):
-        # Reset gradients
-        self.optimizer.zero_grad()
-        
-        # Forward pass
-        outputs = self.network(inputs)
-        
-        # Manually backpropagate
-        # Connect externally computed gradient to pytorch
-        outputs.backward(gradient=grad_tensor)
-        
-        # Update weights
-        for param in self.network.parameters():
-            if param.grad is not None:
-                param.data.add_(param.grad, alpha=-learning_rate)
