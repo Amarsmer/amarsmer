@@ -23,6 +23,9 @@ class PathGeneration(Node):
         self.declare_parameter('display_log', False)
         self.display_log = self.get_parameter('display_log').value
 
+        self.declare_parameter('trajectory', 'station_keeping')
+        self.trajectory = self.get_parameter('trajectory').get_parameter_value().string_value
+
         # Service
         self.path_service = self.create_service(RequestPath, '/path_request', self.generate_path)
 
@@ -152,10 +155,7 @@ class PathGeneration(Node):
             z = 0.0
             yaw = float(yaw)
 
-            
-
         # Create and return pose
-
         quat = R.from_euler('zyx', [yaw, 0.0, 0.0]).as_quat()
 
         pose = PoseStamped()
@@ -170,7 +170,7 @@ class PathGeneration(Node):
 
         return pose
 
-    def generate_path(self, request, response, path_shape = 'sin'):
+    def generate_path(self, request, response):
         if self.display_log:
             self.get_logger().info(f"Received path_request of type: {type(request.path_request)}")
 
@@ -178,7 +178,7 @@ class PathGeneration(Node):
         path_msg.header.frame_id = 'world'
 
         for t in request.path_request.data:
-            temp_pose = self.single_pose(t, path_shape)
+            temp_pose = self.single_pose(t, self.trajectory)
             temp_pose.header.stamp = self.get_clock().now().to_msg()
             path_msg.poses.append(temp_pose)
 
@@ -194,6 +194,7 @@ class PathGeneration(Node):
         desired_pose = self.single_pose(time_request)
         desired_pose.header.stamp = self.get_clock().now().to_msg()
         self.pose_publisher.publish(desired_pose)
+
 
 def main(args=None):
     rclpy.init(args=args)

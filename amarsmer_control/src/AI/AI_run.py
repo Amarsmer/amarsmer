@@ -40,15 +40,16 @@ class Controller(Node):
 
         # self.declare_parameter('name', 'data')
         self.declare_parameter('load_weights', False)
+        self.declare_parameter('weight_name', 'last_w')
         self.declare_parameter('train', True)
         self.declare_parameter('continue_running', True)
-        self.declare_parameter('target', '0 0 0 0 0 0')
-        self.input_string = ''
+        self.declare_parameter('target', '0 0 0 0 0 0') # Initial target
+        self.input_string = ['',''] # Meant to be used as ['instruction', 'argument']
         self.ai_path = Path()
 
         self.rov = ROV(self, thrust_visual = True)
 
-        # Publisher and subscribers
+        ################## ROS2 Communication ##################
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
         self.str_input_subscriber = self.create_subscription(String, '/amarsmer/input_str', self.str_input_callback, 10) # Used to interact with the training process
         self.pose_arrow_publisher = self.create_publisher(Marker, "/pose_arrow", 10)
@@ -56,7 +57,7 @@ class Controller(Node):
         self.data_publisher = self.create_publisher(Float32MultiArray, "/monitoring_data", 10)
         self.network_publisher = self.create_publisher(Float32MultiArray, "/network_data", 10)
         
-        self.dt = 0.01
+        self.dt = 0.01 # Used both for run and pose computation
         self.timer = self.create_timer(self.dt, self.run)
 
         self.future = None # Used for client requests
@@ -66,13 +67,6 @@ class Controller(Node):
 
         while not self.client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info("Waiting for service...")
-
-        ### Initiating variables
-        # Network parameters
-        HL_size = 40
-        input_size = 6 # x, y, psi, u, v, r
-        output_size = 2 # u1, u2
-        self.learning_rate = 1e-4
 
         """
         ################# Reference weighting matrices meant to be equivalent to MPC
@@ -90,6 +84,13 @@ class Controller(Node):
                                  0.015  # u2
                                  ])
         """
+        
+        ################## Initiating variables ##################
+        # Network parameters
+        self.HL_size = 40
+        input_size = 6 # x, y, psi, u, v, r
+        output_size = 2 # u1, u2
+        self.learning_rate = 1e-4
 
         # Weighting matrices
         self.Q_weight = np.diag([15, # x
@@ -106,8 +107,7 @@ class Controller(Node):
         # TODO The difference of R weight between AI and MPC may come from delta_t applied to the gradient, further investigation required
 
         # Create pytorch network
-        self.network = NN(input_size, HL_size, output_size)
-
+        self.network = NN(input_size, self.HL_size, output_size)
         self.trainer = None
         self.training_initiated = False
 
@@ -176,7 +176,7 @@ class Controller(Node):
         return [x, y, psi, u, v, r]
     
     def str_input_callback(self, msg: String):
-        self.input_string = msg.data
+        self.input_string = msg.data.split()
 
     def updateRobotState(self):
         # Extract position and speed as column vectors
@@ -189,14 +189,14 @@ class Controller(Node):
         self.trainer.updateState(self.state)
 
     def run(self):
-        ### Wait for the robot model to be initialized
+        ################## Wait for the robot model to be initialized ##################
         if not self.rov.ready():
             return
 
         # Update time
         self.current_time = self.get_time()
 
-        ### Initialize
+        ################## Initialize ##################
         if not self.training_initiated: # This code used to be in a while loop and requires adjustements to work as a ROS2 node
             self.training_initiated = True
 
@@ -230,7 +230,7 @@ class Controller(Node):
             self.trainer.running = True
             self.training_thread.start()
 
-        ### Request Path
+        ################## Request Path ##################
         # Check if previous future is still pending
         if self.future is not None:
             if self.future.done():
@@ -309,14 +309,14 @@ class Controller(Node):
 
         self.updateRobotState()
 
-        ### Training automation
+        ################## Training automation ##################
         if self.trainer.loss is not None: # Make sure the loss has been initialized
 
             # Detect when loss is below threshold (edge detection)
             if self.trainer.loss < self.loss_threshold and self.previous_loss >= self.loss_threshold :
                 self.minimal_loss_timer = self.current_time
 
-            # Change robot's pose after loss remains under threshold for a set time AND the list of pose has not been parsed
+            # Change robot's pose after loss remains under threshold for a set time
             if self.trainer.running == True and self.minimal_loss_timer is not None and (self.current_time - self.minimal_loss_timer) > self.acceptable_loss_delay:
                     cf.set_pose_gz(self.initial_poses[self.pose_index])
                     self.pose_index += 1
@@ -325,7 +325,7 @@ class Controller(Node):
 
             self.previous_loss = self.trainer.loss
 
-        ### Save and publish data for monitoring
+        ################## Save and publish data for monitoring ##################
         if self.trainer.command_set: # Make sure the training has started
             x_m = self.rov.current_pose[0]
             y_m = self.rov.current_pose[1]
@@ -365,24 +365,24 @@ class Controller(Node):
             # self.get_logger().info(f"\n Network input: {self.trainer.input_display}")
             # self.get_logger().info(f"\n Network input: {self.trainer.skew}")
             
-
-        if self.input_string == 'stop': # Stop training session from terminal
-
-            self.input_string = ''
+        ################## Stop training and record data ##################
+        if self.input_string[0] == 'stop': # Stop training session from terminal
+            weight_name = self.input_string[1]
+            self.input_string = ['','']
             self.trainer.running = False
             self.training_thread.join(timeout=5)
 
             # Save the weights
             json_obj = self.network.save_weights_to_json()
-            with open('last_w_torch.json', 'w') as fp:
+            with open(f'saved_weights/{weight_name}.json', 'w') as fp:
+                
                 json.dump(json_obj, fp)
 
             self.get_logger().info("Training stopped")
 
-            title = 'data/AI_data/' + self.date +'-AI_data'
+            title = f'data/AI_data/{self.date}-HL_{self.HL_size}-AI_data'
             np.save(title, self.monitoring)
 
-            
 
 rclpy.init()
 node = Controller()
