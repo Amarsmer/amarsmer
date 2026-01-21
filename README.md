@@ -74,7 +74,7 @@ The full launch file for AI training and control (including world launch) is ran
 
 As QoL, some parameters can be set from terminal:
 
-`ros2 launch amarsmer_control AI_launch.py trajectory:='sin' load_weights:=False train:=True`
+`ros2 launch amarsmer_control AI_launch.py trajectory:='sin' weights_name:='test_weight' train:=True`
 
 Currently the training starts automatically. If considered satisfactory, it can be stopped and the associated weights saved with the following command:
 

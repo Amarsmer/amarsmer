@@ -39,8 +39,8 @@ class Controller(Node):
         super().__init__('ai_control', namespace='amarsmer')
 
         # self.declare_parameter('name', 'data')
-        self.declare_parameter('load_weights', False)
-        self.declare_parameter('weight_name', 'last_w')
+        # self.declare_parameter('load_weights', False)
+        self.declare_parameter('weight_name', '')
         self.declare_parameter('train', True)
         self.declare_parameter('continue_running', True)
         self.declare_parameter('target', '0 0 0 0 0 0') # Initial target
@@ -203,10 +203,12 @@ class Controller(Node):
             self.t0 = self.get_time() # Initial time for data collection
 
             # Weight loading
-            if self.get_parameter('load_weights').get_parameter_value().bool_value:
-                with open('/home/noe/ros2_ws/saved_weights/adam_2.json') as fp:
+            weight_name = self.get_parameter('weight_name').get_parameter_value().string_value
+            if weight_name != '':
+                with open(f'/home/noe/ros2_ws/saved_weights/{weight_name}.json') as fp:
                     json_obj = json.load(fp)
                 self.network.load_weights_from_json(json_obj)
+                self.get_logger().info(f"Loading weight json: {weight_name}.")
                 
             # Initialize trainer
             self.trainer = PyTorchOnlineTrainer(self.rov, self.network, self.learning_rate, self.Q_weight, self.R_weight)
