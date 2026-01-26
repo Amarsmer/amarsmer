@@ -39,17 +39,15 @@ class Controller(Node):
         super().__init__('ai_control', namespace='amarsmer')
 
         # self.declare_parameter('name', 'data')
-        # self.declare_parameter('load_weights', False)
-        self.declare_parameter('weight_name', '')
-        self.declare_parameter('train', True)
-        self.declare_parameter('continue_running', True)
-        self.declare_parameter('target', '0 0 0 0 0 0') # Initial target
-        self.input_string = ['',''] # Meant to be used as ['instruction', 'argument']
-        self.ai_path = Path()
+        self.declare_parameter('weight_name', '')        # Will load a saved weight file if specified, otherwise will create some
+        self.declare_parameter('train', True)            # Wether weight are updated, 'False' implies testing
+        self.declare_parameter('automate', True)         # Test automation will change the robot's pose if some loss requirements are met
+        self.input_string = ['','']                      # Meant to be used as ['instruction', 'argument']
 
         self.rov = ROV(self, thrust_visual = True)
 
         ################## ROS2 Communication ##################
+
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
         self.str_input_subscriber = self.create_subscription(String, '/amarsmer/input_str', self.str_input_callback, 10) # Used to interact with the training process
         self.pose_arrow_publisher = self.create_publisher(Marker, "/pose_arrow", 10)
@@ -86,16 +84,13 @@ class Controller(Node):
         """
         
         ################## Initiating variables ##################
-        # Network parameters
-        self.HL_size = 40
-        input_size = 6 # x, y, psi, u, v, r
-        output_size = 2 # u1, u2
-        self.learning_rate = 1e-4
 
+        self.ai_path = Path()
+        
         # Weighting matrices
-        self.Q_weight = np.diag([15, # x
+        self.Q_weight = np.diag([50, # x
                                  50, # y 
-                                 40, # psi
+                                 10, # psi
                                  1, # u
                                  1, # v
                                  1  # r
@@ -106,21 +101,59 @@ class Controller(Node):
                                  ])
         # TODO The difference of R weight between AI and MPC may come from delta_t applied to the gradient, further investigation required
 
-        # Create pytorch network
-        self.network = NN(input_size, self.HL_size, output_size)
+        ### Create pytorch network
+
+        # Network parameters
+        self.HL_size = 40
+        input_size = 6 # x, y, psi, u, v, r
+        output_size = 2 # u1, u2
+        self.learning_rate = 1e-4
+
         self.trainer = None
         self.training_initiated = False
 
-        # Test automation
-        self.loss_threshold = 20.
-        self.previous_loss = 1e10 # Initialized at an arbitrarily high value instead of None to reduce the number of if statements
-        self.minimal_loss_timer = None
-        self.acceptable_loss_delay = 10. # If the loss is below the threshold for this amount of second, the robot is moved
-        self.pose_index = 0
-        self.initial_poses = [np.array([4., 4., 0., 0., 0., 1.]),
-                              np.array([-4., -4., 0., 0., 0., 4.]),
-                              np.array([4., -4., 0., 0., 0., 1.]),
-                              np.array([-4., -4., 0., 0., 0., 4.])]
+        # Weight loading
+        weight_name = self.get_parameter('weight_name').get_parameter_value().string_value
+        if weight_name == '':
+            self.get_logger().info(f"No weight loaded. Initializing random weights with hidden layer size: {self.HL_size}.")
+            self.network = NN(input_size, self.HL_size, output_size)
+
+        else:
+            # Check if the file exists
+            try:
+                with open(f'/home/noe/ros2_ws/saved_weights/{weight_name}.json') as fp:
+                    json_obj = json.load(fp)
+                
+            # If it does not, display error message and create a new network
+            except:
+                self.get_logger().info(f"#################### ERROR: no weight file with the name: {weight_name}. Initializing random weights with hidden layer size: {self.HL_size}. ####################")
+                self.network = NN(input_size, self.HL_size, output_size)
+
+            # If it exists, adjust the hidden layer size and load the network
+            else:
+                self.HL_size = len(json_obj["input_weights"][0][:])
+                self.network = NN(input_size, self.HL_size, output_size)
+                self.network.load_weights_from_json(json_obj)
+                self.get_logger().info(f"Loading weight json: {weight_name}.")
+
+        ### Test automation
+        self.automate = self.get_parameter('automate').get_parameter_value().bool_value
+        if self.automate:
+            self.loss_threshold = 15.
+            self.previous_loss = 1e10 # Initialized at an arbitrarily high value instead of None to reduce the number of if statements
+            self.minimal_loss_timer = None
+            self.acceptable_loss_delay = 10. # If the loss is below the threshold for this amount of time (s), the robot is moved
+            self.pose_index = 0
+            self.initial_poses = [np.array([4., 4., 0., 0., 0., 1.]),
+                                np.array([-4., -4., 0., 0., 0., 4.]),
+                                np.array([4., -4., 0., 0., 0., 1.]),
+                                np.array([-4., 4., 0., 0., 0., np.pi/2]),
+                                np.array([0., -4., 0., 0., 0., np.pi/2.]),
+                                np.array([-4., 4., 0., 0., 0., -np.pi/2]),
+                                np.array([0., -4., 0., 0., 0., -np.pi/2.]),
+                                np.array([15., 4., 0., 0., 0., 1.]),
+                                np.array([-4., 15., 0., 0., 0., 4.]),
+                                np.array([15., 15., 0., 0., 0., 0.])]
 
         self.current_time = self.get_time()
 
@@ -190,6 +223,7 @@ class Controller(Node):
 
     def run(self):
         ################## Wait for the robot model to be initialized ##################
+
         if not self.rov.ready():
             return
 
@@ -197,42 +231,31 @@ class Controller(Node):
         self.current_time = self.get_time()
 
         ################## Initialize ##################
+
         if not self.training_initiated: # This code used to be in a while loop and requires adjustements to work as a ROS2 node
             self.training_initiated = True
 
             self.t0 = self.get_time() # Initial time for data collection
-
-            # Weight loading
-            weight_name = self.get_parameter('weight_name').get_parameter_value().string_value
-            if weight_name != '':
-                with open(f'/home/noe/ros2_ws/saved_weights/{weight_name}.json') as fp:
-                    json_obj = json.load(fp)
-                self.network.load_weights_from_json(json_obj)
-                self.get_logger().info(f"Loading weight json: {weight_name}.")
-                
+                    
             # Initialize trainer
             self.trainer = PyTorchOnlineTrainer(self.rov, self.network, self.learning_rate, self.Q_weight, self.R_weight)
 
             train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
 
-            # Main training loop, currently runs only once
-            continue_running = True
-            session_count = 0
-            session_count += 1
-
-            self.target = self.get_parameter('target').get_parameter_value().string_value
-            self.target = list(map(float, self.target.split())) # convert a multiple values string to a list
+            # Main training
+            self.target = [0.,0.,0.,0.,0.,0.] # Initial target
 
             self.updateRobotState() # The trainer thread requires manual update of the robot's pose and twist
             self.trainer.updateTarget(self.target) # To be used for trajectory tracking
 
-            self.get_logger().info(f"\n Starting training session #{session_count}")
+            self.get_logger().info(f"\n Starting training session")
 
             self.training_thread = threading.Thread(target=self.trainer.train, args=(self.target,)) # Start training process on a separate thread
             self.trainer.running = True
             self.training_thread.start()
 
         ################## Request Path ##################
+
         # Check if previous future is still pending
         if self.future is not None:
             if self.future.done():
@@ -265,77 +288,41 @@ class Controller(Node):
             cf.create_pose_marker(target_pose, self.pose_arrow_publisher)
         
         #TODO: add flexibility to run multiple training sessions
-        """
-        input_string = self.get_parameter('input_string').value
-        try:
-            if input_string != '':
-                # self.input_string = ''
-                self.set_parameters([Parameter('input_string', Parameter.Type.STRING, '')])
-                # input("Press Enter to stop the current training")
-                self.trainer.running = False
-            
-            training_thread.join(timeout=5)
-            if training_thread.is_alive():
-                print("Training thread did not finish in time, continuing anyway")
-                
-        except KeyboardInterrupt:
-            print("\nKeyboard interrupt detected. Stopping training...")
-            self.trainer.running = False
-            training_thread.join(timeout=5)
-
-        if display_curves:
-            monitor.save_results(f"session_{session_count}_{time.strftime('%Y%m%d_%H%M%S')}")
-
-        # choice = ''
-        self.get_logger().info("Do you want to continue? (y/n) --> ")
-        while input_string.lower() not in ['y', 'n']:
-            input_string = self.get_parameter('input_string').value
-            self.get_logger().info(f"stored variable: {input_string}")
-            # choice = input("Do you want to continue? (y/n) --> ")
-
-        if input_string.lower() == 'y':
-            choice_learning = ''
-            while choice_learning.lower() not in ['y', 'n']:
-                choice_learning = input('Do you want to learn? (y/n) --> ')
-            
-            self.trainer.training = (choice_learning.lower() == 'y')
-            
-            # target_input = input("Move the robot to the initial point and enter the new target : x y radian --> ")
-            # target = [float(x) for x in target_input.split()]
-            # if len(target) != 3:
-            #     raise ValueError("Need exactly 3 values")
-        
-        else:
-            continue_running = False
-        """
 
         self.updateRobotState()
 
         ################## Training automation ##################
-        if self.trainer.loss is not None: # Make sure the loss has been initialized
+
+        if self.trainer.loss and self.automate: # Make sure the loss has been initialized
 
             # Detect when loss is below threshold (edge detection)
-            if self.trainer.loss < self.loss_threshold and self.previous_loss >= self.loss_threshold :
-                self.minimal_loss_timer = self.current_time
+            if self.trainer.loss < self.loss_threshold :
+                if self.previous_loss >= self.loss_threshold :
+                    self.minimal_loss_timer = self.current_time
+            else:
+                self.minimal_loss_timer = None
+
 
             # Change robot's pose after loss remains under threshold for a set time
-            if self.trainer.running == True and self.minimal_loss_timer is not None and (self.current_time - self.minimal_loss_timer) > self.acceptable_loss_delay:
+            if self.minimal_loss_timer and (self.current_time - self.minimal_loss_timer) > self.acceptable_loss_delay:
                     cf.set_pose_gz(self.initial_poses[self.pose_index])
                     self.pose_index += 1
                     self.pose_index %= len(self.initial_poses) # Makes sure the index wraps around instead of getting outside of the list
                     self.minimal_loss_timer = None
+                    self.get_logger().info(f"\n Loss requirements met. Current pose index: {self.pose_index}")
 
             self.previous_loss = self.trainer.loss
 
         ################## Save and publish data for monitoring ##################
+
         if self.trainer.command_set: # Make sure the training has started
             x_m = self.rov.current_pose[0]
             y_m = self.rov.current_pose[1]
             psi_m = self.rov.current_pose[5]
 
-            x_d_m = self.target[0]
-            y_d_m = self.target[1]
-            psi_d_m = self.target[2]
+            x_d_m = self.trainer.target[0]
+            y_d_m = self.trainer.target[1]
+            psi_d_m = self.trainer.target[2]
 
             u = self.trainer.u.ravel()
             grad = self.trainer.gradient_display.ravel()
@@ -363,11 +350,12 @@ class Controller(Node):
             # self.get_logger().info(f"\n Internal error: {self.trainer.error}") 
             # self.get_logger().info(f"\n Train state: {self.trainer.state_train_display}")
             # self.get_logger().info(f"\n Train target: {self.trainer.target}") 
-            # self.get_logger().info(f"\n Train error: {self.trainer.error_display}")
+            # self.get_logger().info(f"\n Train error: {self.trainer.error_display[2]}")
             # self.get_logger().info(f"\n Network input: {self.trainer.input_display}")
             # self.get_logger().info(f"\n Network input: {self.trainer.skew}")
             
         ################## Stop training and record data ##################
+        
         if self.input_string[0] == 'stop': # Stop training session from terminal
             weight_name = self.input_string[1]
             self.input_string = ['','']
@@ -382,7 +370,7 @@ class Controller(Node):
 
             self.get_logger().info("Training stopped")
 
-            title = f'data/AI_data/{self.date}-HL_{self.HL_size}-AI_data'
+            title = f'data/AI_data/{self.date}-weightfile_{weight_name}-HL_{self.HL_size}-AI_data'
             np.save(title, self.monitoring)
 
 

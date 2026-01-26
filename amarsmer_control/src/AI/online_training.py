@@ -82,10 +82,20 @@ class PyTorchOnlineTrainer:
         self.state = in_state
 
     def computeError(self):
+        # Apply angle disambiguation
+        # c_state = self.state
+        # c_state[2] = np.sin(c_state[2]/2)
+
+        # c_target = np.array(self.target).reshape(-1, 1)
+        # c_target[2] = np.sin(self.target[2]/2)
+
         # Compute error as a column vector
         error = self.state - np.array(self.target).reshape(-1, 1)
+        # Apply angle disambiguation
+        error[2] = 2*np.sin(error[2]/2)
+        # error = c_state - c_target
         skew = theta_s(self.state[0], self.state[1])
-        error[2] -= skew # Yaw skew
+        # error[2] -= skew # Yaw skew
 
         self.skew = skew # Monitoring
         

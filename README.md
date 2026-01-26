@@ -74,11 +74,11 @@ The full launch file for AI training and control (including world launch) is ran
 
 As QoL, some parameters can be set from terminal:
 
-`ros2 launch amarsmer_control AI_launch.py trajectory:='sin' weights_name:='test_weight' train:=True`
+`ros2 launch amarsmer_control AI_launch.py trajectory:='sin' weight_name:='name' train:=True`
 
 Currently the training starts automatically. If considered satisfactory, it can be stopped and the associated weights saved with the following command:
 
-'ros2 topic pub --once /amarsmer/input_str std_msgs/msg/String "data: stop [weights_name]"'
+'ros2 topic pub --once /amarsmer/input_str std_msgs/msg/String "data: stop [weight_name]"'
 
 # License
 Amarsmer package is open-sourced under the MIT License. See the LICENSE file for details.

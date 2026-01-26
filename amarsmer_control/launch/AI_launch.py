@@ -7,9 +7,9 @@ def generate_launch_description():
     sl = SimpleLauncher(use_sim_time = True)
 
     sl_trajectory = sl.declare_arg('trajectory', default_value = 'station_keeping')
-    # sl_load_weights = sl.declare_arg('load_weights', default_value = False)
-    sl_weight_name = sl.declare_arg('weights_name', default_value = '')
+    sl_weight_name = sl.declare_arg('weight_name', default_value = '')
     sl_train = sl.declare_arg('train', default_value = True)
+    sl_automate = sl.declare_arg('automate', default_value = True)
 
 
     sl.include('amarsmer_description', 'world_launch.py', launch_arguments={'sliders': False})
@@ -19,7 +19,8 @@ def generate_launch_description():
     sl.node('amarsmer_control', 'path_publisher.py')
 
     sl.node('amarsmer_control', 'AI_run.py', parameters={'weight_name' : sl_weight_name,
-                                                         'train': sl_train})
+                                                         'train': sl_train,
+                                                         'automate': sl_automate})
 
     """
     layout_file = str(Path(__file__).parents[2] / "plotJuggler_2D_BP_monitoring.xml")

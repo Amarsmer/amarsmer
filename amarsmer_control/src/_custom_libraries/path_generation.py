@@ -31,16 +31,15 @@ class PathGeneration(Node):
 
     def single_pose(self, t: float, path_shape = 'station_keeping') -> PoseStamped:
         """
-        Generate a helical pose for a given time t.
+        Generate a path for a given time t.
         """
-        radius = 4.0        # meters
+        #TODO Find a more elegant method to select path (probably a dictionnary)
+
         depth_per_circle = 2.0  # meters
         num_turns = 3
         total_length = 2 * np.pi * num_turns
 
-        # Normalize t
-        # t = (t / self.total_time) * total_length
-
+        # Station keeping
         if path_shape == 'station_keeping':
             x = 0.0
             y = 0.0
@@ -49,12 +48,12 @@ class PathGeneration(Node):
             pitch = 0.0
             yaw = 0.0
         
+        # Circle
         if path_shape == 'circle':
-            # Circle
+            radius = 4.0 # meters
             t *= 0.08
             x = radius * np.cos(t)
             y = radius * np.sin(t)
-            # z = -(depth_per_circle * t) / (2 * np.pi)
             z = 0.0
 
             dx = -radius * np.sin(t)
@@ -62,15 +61,15 @@ class PathGeneration(Node):
             yaw = np.arctan2(dy, dx)
             yaw = (yaw + np.pi) % (2 * np.pi) - np.pi # Normalize
 
+        # Straight line
         if path_shape == 'straight_line':
-            # Straight line
             x = 0.4*t
             y = 2.0
             z = 0.0
             yaw = 0
-        
+
+        # Sin line
         if path_shape == 'sin':
-            # Sin line
             a = 3
             f = 0.1
             vx = 0.5
@@ -83,8 +82,8 @@ class PathGeneration(Node):
             dy = a * f * np.cos(f*t)
             yaw = np.arctan2(dy, dx)
 
+        # Square wave
         if path_shape == 'square':
-            # Square wave
             period = 0.01
             amplitude = 2.0
             heading_dt = 0.01
@@ -107,9 +106,8 @@ class PathGeneration(Node):
             dy = y_fwd - y
             yaw = math.atan2(dy, dx)
 
+        # Kinematic square wave
         if path_shape == 'kin_square':
-            # Kinematic square wave
-
             segment_length = 6.0
             surge_speed = 0.4
             z = 0.0
@@ -148,6 +146,7 @@ class PathGeneration(Node):
             x += dx * surge_speed * t_in_segment
             y += dy * surge_speed * t_in_segment
 
+        # Seabed scanning
         if path_shape == 'seabed_scanning':
             x,y,z,roll,pitch,yaw = cf.seabed_scanning(t)
             x = float(x)
