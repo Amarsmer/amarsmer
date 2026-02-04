@@ -64,7 +64,7 @@ class PyTorchOnlineTrainer:
                                   [0.                              , 0.                            ],
                                   [self.radius/(self.Iz - self.Nrdot)   , -self.radius/(self.Iz - self.Nrdot)]])
 
-        self.command_set = False # Make sure inputs have been computed before recording data
+        self.trainer_set = False # Make sure inputs have been computed before recording data
 
         # Monitoring variables, meant to be displayed in terminal
         self.gradient_display = None
@@ -82,18 +82,12 @@ class PyTorchOnlineTrainer:
         self.state = in_state
 
     def computeError(self):
-        # Apply angle disambiguation
-        # c_state = self.state
-        # c_state[2] = np.sin(c_state[2]/2)
-
-        # c_target = np.array(self.target).reshape(-1, 1)
-        # c_target[2] = np.sin(self.target[2]/2)
-
         # Compute error as a column vector
         error = self.state - np.array(self.target).reshape(-1, 1)
+
         # Apply angle disambiguation
         error[2] = 2*np.sin(error[2]/2)
-        # error = c_state - c_target
+
         skew = theta_s(self.state[0], self.state[1])
         # error[2] -= skew # Yaw skew
 
@@ -103,12 +97,12 @@ class PyTorchOnlineTrainer:
 
     def computeNetworkInput(self, error):
         # Weight matrix used for input normalization
-        weight_matrix = np.diag([1/10, 1/10, 1/np.pi, 1, 1, 1])
+        weight_matrix = np.diag([1/10, 1/10, 1/np.pi, 1/5, 1/5, 1/np.pi])
         network_input = weight_matrix @ error
         
         return network_input.ravel()
 
-    def computeGradient(self, delta_t, error, alpha1 = 0, alpha2 = 1000):
+    def computeGradient(self, delta_t, error, alpha1 = 1, alpha2 = 1000):
         x,y,psi,u,v,r = self.state.ravel()
 
         gradxJ = 2 * (self.Q @ error)
@@ -184,9 +178,6 @@ class PyTorchOnlineTrainer:
 
             self.loss_display = np.array([crit_x, crit_u])
 
-            if not self.command_set: # Used for data recording purposes
-                self.command_set = True
-
             ### Training step
             if self.training:
                 delta_t = (time.time() - start_time)
@@ -211,6 +202,9 @@ class PyTorchOnlineTrainer:
             self.state_train_display = self.state
             self.error_display = error
             self.input_display = network_input
+
+            if not self.trainer_set: # Used for data recording purposes
+                self.trainer_set = True
 
         # Stop the robot after learning
         self.robot.move([0,0,0,0],

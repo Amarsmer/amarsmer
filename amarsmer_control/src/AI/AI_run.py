@@ -286,8 +286,6 @@ class Controller(Node):
             # Display target in gazebo
             target_pose = cf.make_pose(self.target)
             cf.create_pose_marker(target_pose, self.pose_arrow_publisher)
-        
-        #TODO: add flexibility to run multiple training sessions
 
         self.updateRobotState()
 
@@ -315,10 +313,10 @@ class Controller(Node):
 
         ################## Save and publish data for monitoring ##################
 
-        if self.trainer.command_set: # Make sure the training has started
-            x_m = self.rov.current_pose[0]
-            y_m = self.rov.current_pose[1]
-            psi_m = self.rov.current_pose[5]
+        if self.trainer.trainer_set: # Make sure the training has started
+            x_m = self.trainer.state[0]
+            y_m = self.trainer.state[1]
+            psi_m = self.trainer.state[5]
 
             x_d_m = self.trainer.target[0]
             y_d_m = self.trainer.target[1]

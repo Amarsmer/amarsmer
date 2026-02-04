@@ -64,9 +64,9 @@ class PathGeneration(Node):
         # Straight line
         if path_shape == 'straight_line':
             x = 0.4*t
-            y = 2.0
+            y = 0.4*t
             z = 0.0
-            yaw = 0
+            yaw = np.pi/4
 
         # Sin line
         if path_shape == 'sin':

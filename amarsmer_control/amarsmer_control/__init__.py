@@ -64,7 +64,7 @@ class ROV:
         return self.thruster_pub
 
     def ready(self):
-        return self.p is not None
+        return self.rb is not None and self.current_pose is not None
 
     def odom_cb(self, odom: Odometry):
 
