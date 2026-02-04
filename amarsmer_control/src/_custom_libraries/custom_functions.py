@@ -26,7 +26,7 @@ def set_current_gz(x, y, z):
     os.system(f'gz topic -t "/ocean_current" -m gz.msgs.Vector3d -p "x: {x}, y: {y}, z: {z}"')
 
 #################### ROS2 interaction ####################
-def odometry(msg):
+def odometry(msg, quat = False):
     # Extract pose
     msg_pose = msg.pose.pose
 
@@ -41,14 +41,19 @@ def odometry(msg):
     qz = msg_pose.orientation.z
     qw = msg_pose.orientation.w
 
-    # Convert quaternion to roll, pitch, yaw
-    rot = R.from_quat([qx, qy, qz, qw])
-    roll, pitch, yaw = rot.as_euler('xyz', degrees=False)
+    if quat: # Use quaternion directly
+        pose = [x,y,z,qx,qy,qz,qw]
 
-    pose = [x,y,z,roll,pitch,yaw]
+    else:
+        # Convert quaternion to roll, pitch, yaw
+        rot = R.from_quat([qx, qy, qz, qw])
+        roll, pitch, yaw = rot.as_euler('xyz', degrees=False)
+
+        pose = [x,y,z,roll,pitch,yaw]
 
     # Extract twist
     twist = msg.twist.twist
+
     u = twist.linear.x
     v = twist.linear.y
     w = twist.linear.z
@@ -61,7 +66,48 @@ def odometry(msg):
 
     return pose, twist
 
-def make_pose(pose_list):
+def quaternion_multiply(q0, q1): # From https://docs.ros.org/en/foxy/Tutorials/Intermediate/Tf2/Quaternion-Fundamentals.html
+    """
+    Multiplies two quaternions.
+
+    Input
+    :param q0: A 4 element array containing the first quaternion (q01, q11, q21, q31)
+    :param q1: A 4 element array containing the second quaternion (q02, q12, q22, q32)
+
+    Output
+    :return: A 4 element array containing the final quaternion (q03,q13,q23,q33)
+
+    """
+    # Extract the values from q0
+    w0 = q0[0]
+    x0 = q0[1]
+    y0 = q0[2]
+    z0 = q0[3]
+
+    # Extract the values from q1
+    w1 = q1[0]
+    x1 = q1[1]
+    y1 = q1[2]
+    z1 = q1[3]
+
+    # Computer the product of the two quaternions, term by term
+    q0q1_w = w0 * w1 - x0 * x1 - y0 * y1 - z0 * z1
+    q0q1_x = w0 * x1 + x0 * w1 + y0 * z1 - z0 * y1
+    q0q1_y = w0 * y1 - x0 * z1 + y0 * w1 + z0 * x1
+    q0q1_z = w0 * z1 + x0 * y1 - y0 * x1 + z0 * w1
+
+    # Create a 4 element array containing the final quaternion
+    final_quaternion = np.array([q0q1_w, q0q1_x, q0q1_y, q0q1_z])
+
+    # Return a 4 element array containing the final quaternion (q02,q12,q22,q32)
+    return final_quaternion
+
+def quaternion_error(q2, q1): # Returns "q2-q1"
+    q1[3] = -prev_pose.pose.orientation.w # Negate for inverse
+
+    return quaternion_multiply(q2, q1)
+
+def make_pose(pose_list): #TODO: Make it usable in 3D
     x = pose_list[0]
     y = pose_list[1]
     theta = pose_list[2]
