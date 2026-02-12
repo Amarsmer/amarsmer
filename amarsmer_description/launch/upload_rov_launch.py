@@ -13,6 +13,7 @@ sl.declare_arg('spawn_pose', default_value = "0.0 0.0 0.0 0.0 0.0 0.0")
 
 sl.declare_gazebo_axes(x=-4, y=4, z=0., roll=0.,pitch=0., yaw=-1)
 # sl.declare_gazebo_axes(x=0., y=0., z=0., roll=0.,pitch=0., yaw=0.)
+
 def launch_setup():
     
     ns = sl.arg('namespace')
@@ -62,8 +63,15 @@ def launch_setup():
                 steering = f'/model/{ns}/joint/thruster{t}_steering/0/cmd_pos'
                 bridges.append(GazeboBridge(steering, f'cmd_{thruster}_steering', 'std_msgs/Float64', GazeboBridge.ros2gz))
 
-        elif thr == 'thrusters_plasmar1':
-            pass
+        elif thr == 'thrusters_plasmar_uvr':
+            for t in range(1, 4):
+                thruster = f'thruster{t}'
+                gz_thr_topic = f'/{ns}/{thruster}/cmd'
+                bridges.append(GazeboBridge(gz_thr_topic, f'cmd_{thruster}', 'std_msgs/Float64', GazeboBridge.ros2gz))
+
+                steering = f'/model/{ns}/joint/thruster{t}_steering/0/cmd_pos'
+                bridges.append(GazeboBridge(steering, f'cmd_{thruster}_steering', 'std_msgs/Float64', GazeboBridge.ros2gz))
+
 
         sl.create_gz_bridge(bridges)
 

@@ -20,7 +20,7 @@ from visualization_msgs.msg import Marker
 
 # Custom libraries
 from urdf_parser_py import urdf
-import ur_mpc
+import uvr_mpc
 from amarsmer_control import ROV
 from amarsmer_interfaces.srv import RequestPath
 import custom_functions as cf
@@ -52,9 +52,9 @@ class Controller(Node):
         self.mpc_path = Path()
         linear_bound = 40.0
         angular_bound = 15.0
-        self.input_bounds = {"lower": np.array([-linear_bound, -linear_bound]),
-                             "upper": np.array([linear_bound, linear_bound]),
-                             "idx":   np.array([0, 1])
+        self.input_bounds = {"lower": np.array([-linear_bound, -linear_bound, -linear_bound]),
+                             "upper": np.array([linear_bound, linear_bound, linear_bound]),
+                             "idx":   np.array([0, 1, 2])
                              }
         self.Q_weight = np.diag([50, # x
                                  50, # y 
@@ -65,7 +65,8 @@ class Controller(Node):
                                  ])
         
         self.R_weight = np.diag([0.015, # u1
-                                 0.015  # u2
+                                 0.015, # u2
+                                 0.015  # u3
                                  ])
 
         # Initialize MPC solver
@@ -95,7 +96,7 @@ class Controller(Node):
             return
 
         if self.controller is None:
-            self.controller = ur_mpc.MPCController(robot_mass = self.rov.mass,
+            self.controller = uvr_mpc.MPCController(robot_mass = self.rov.mass,
                                             iz = self.rov.inertia[-1], 
                                             a_u = self.rov.added_masses[0],
                                             a_v = self.rov.added_masses[1],
@@ -135,7 +136,7 @@ class Controller(Node):
         self.future = self.client.call_async(request)
 
         # MPC control
-        u = np.zeros(2)
+        u = np.zeros(3)
 
         if self.rov.current_pose is not None and self.rov.current_twist is not None:
             x_current = np.array([self.rov.current_pose[0], # x
@@ -161,11 +162,13 @@ class Controller(Node):
         #               [0 for i in range(1,5)])
 
         # Open loop
-        # self.rov.move([10,-10,0,0],
-        #               [0 for i in range(1,5)])
+        # self.rov.move([40,40,40],
+        #               [0 for i in range(1,4)])
         
-        self.rov.move([u[0],u[1],0,0],
-                      [0 for i in range(1,5)])
+        self.rov.move([u[0],u[1],u[2]],
+                      [0,0,0])
+
+        # self.get_logger().info(f"\n U: {u}")
 
         # Update and save monitoring metrics to be graphed later
         if self.mpc_path.poses:

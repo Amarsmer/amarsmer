@@ -8,6 +8,34 @@ import numpy as np
 def theta_s(x, y): # Angle skew, used to prevent the singularity in x=0
     return math.tanh(5.*x)*math.atan(10.*y)
 
+def dynamicSkew(x,y,psi):
+    delta_x = x >= 0
+    delta_y = y >= 0
+    delta_psi = psi >= 0
+    abs_psi = abs(psi) >= np.pi/2
+
+    atan2 = abs_psi or delta_x or (delta_y and delta_psi)
+
+    if atan2:
+        return np.arctan2(y,x)
+    else:
+        return np.arctan(y/x)
+
+def wrap(angle):
+    return (angle + np.pi) % (2 * np.pi) - np.pi
+
+def transformationMatrix(state):
+    # Inverse transformation matrix that converts world coordinates to robot coordinates
+    x_w,y_w,theta = state[0:3].ravel()
+    c = np.cos
+    s = np.sin
+
+    tf_mat = np.array([[ c(theta), s(theta), -c(theta)*x_w - s(theta)*y_w], 
+                        [-s(theta), c(theta),  s(theta)*x_w - c(theta)*y_w],
+                        [     0   ,     0   ,               1             ]])
+                        
+    return -tf_mat # The minus sign is because this method assumes the error is 'target - state' which is opposite here
+
 class PyTorchOnlineTrainer:
     def __init__(self, robot, nn_model, in_learning_rate = 5e-4, Q=np.eye(6), R=np.eye(3)):
 
@@ -31,6 +59,8 @@ class PyTorchOnlineTrainer:
         # Variables init
         self.state = None
         self.error = None
+        self.previous_target = None
+        self.previous_state = None
         self.target = None
         self.u = np.zeros(2)
         self.loss = None
@@ -74,35 +104,60 @@ class PyTorchOnlineTrainer:
         self.skew = None
         self.state_display = None
         self.loss_display = np.zeros(2)
+        self.robot_frame_display = np.zeros(3)
 
     def updateTarget(self, in_target):
-        self.target = in_target
+        temp_target = in_target
+        if self.previous_target is not None:
+            temp_target[2] = np.unwrap([self.previous_target[2],temp_target[2]])[-1]
+
+        self.target = temp_target
 
     def updateState(self, in_state):
-        self.state = in_state
+        temp_state = in_state
+        if self.previous_state is not None:
+            temp_state[2] = np.unwrap([self.previous_state[2],temp_state[2]])[-1]
+
+        self.state = temp_state
 
     def computeError(self):
         # Compute error as a column vector
         error = self.state - np.array(self.target).reshape(-1, 1)
 
-        # Apply angle disambiguation
+        tf = transformationMatrix(self.state[0:3])
+        robot_coordinates = tf @ error[0:3] 
+        self.robot_frame_display = robot_coordinates
+
+        x_r,y_r,psi_r = robot_coordinates
+
+        # psi_r = wrap(psi_r)
+        # psi_skew = dynamicSkew(x_r, y_r, psi_r)
+        psi_skew = np.arctan2(y_r,x_r)
+        # psi_skew = theta_s(x_r,y_r)
+        self.skew = psi_skew # Monitoring
+
+        d = np.sqrt(x_r**2+y_r**2)
+        d_w = 0.5
+
+        error[2] -= (np.exp(-(d*d_w)**2)*self.target[2] + (1 - np.exp(-(d*d_w)**2))*psi_skew)
+        # error[2] = wrap(error[2])
         error[2] = 2*np.sin(error[2]/2)
 
-        skew = theta_s(self.state[0], self.state[1])
-        # error[2] -= skew # Yaw skew
-
-        self.skew = skew # Monitoring
-        
         return error
 
     def computeNetworkInput(self, error):
+        x,y,psi,u,v,r = error
+
+        d = np.sqrt(x**2+y**2)
+
         # Weight matrix used for input normalization
-        weight_matrix = np.diag([1/10, 1/10, 1/np.pi, 1/5, 1/5, 1/np.pi])
-        network_input = weight_matrix @ error
+        weight_matrix = np.diag([1/100, 1/np.pi, 1/5, 1/5, 1/np.pi])
+
+        network_input = weight_matrix @ np.array([d,psi,u,v,r]).reshape((5,1))
         
         return network_input.ravel()
 
-    def computeGradient(self, delta_t, error, alpha1 = 1, alpha2 = 1000):
+    def computeGradient(self, delta_t, error, alpha1 = 0, alpha2 = 1000):
         x,y,psi,u,v,r = self.state.ravel()
 
         gradxJ = 2 * (self.Q @ error)
@@ -190,9 +245,6 @@ class PyTorchOnlineTrainer:
                 # Convert to tensor grad
                 grad_tensor = torch.tensor(grad, dtype=torch.float32)
 
-                # Normalize magnitude, preserve direction
-                # grad_tensor = grad_tensor / (grad_tensor.norm() + 1e-6)
-
                 # Backprop using external gradient
                 self.optimizer.zero_grad()
                 u_tensor.backward(gradient=grad_tensor)
@@ -202,6 +254,9 @@ class PyTorchOnlineTrainer:
             self.state_train_display = self.state
             self.error_display = error
             self.input_display = network_input
+
+            self.previous_target = self.target
+            self.previous_state = self.state
 
             if not self.trainer_set: # Used for data recording purposes
                 self.trainer_set = True

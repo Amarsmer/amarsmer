@@ -59,7 +59,8 @@ def export_underwater_model(
     # Controls
     u1 = ca.SX.sym('u1')
     u2 = ca.SX.sym('u2')
-    U = ca.vertcat(u1,u2)
+    u3 = ca.SX.sym('u3')
+    U = ca.vertcat(u1,u2,u3)
 
     # Kinematics
     x_dot   = u * ca.cos(psi) - v * ca.sin(psi)
@@ -105,10 +106,11 @@ def export_underwater_model(
     tau = ca.vertcat(tau_u, tau_v, tau_r)
 
     r = 0.15
+    l = 0.3
 
-    B = ca.vertcat(ca.horzcat(1.0,       1.0),
-                   ca.horzcat(0.0,       0.0),
-                   ca.horzcat(r  ,      -r))
+    B = ca.vertcat(ca.horzcat(1.0,       1.0,   0.0),
+                   ca.horzcat(0.0,       0.0,   1.0),
+                   ca.horzcat(r  ,      -r  ,   l))
 
     eq_tau = ca.mtimes(B, U)
 
@@ -256,7 +258,7 @@ class MPCController:
         self.solver.set(0, 'ubx', x_current)
 
         x_refs = np.array(x_refs)  # shape (N+1, nx)
-        u_refs = np.zeros((self.N, 2))  # N x nu
+        u_refs = np.zeros((self.N, 3))  # N x nu
 
         for i in range(self.N):
             yref = np.concatenate((x_refs[i], u_refs[i]))

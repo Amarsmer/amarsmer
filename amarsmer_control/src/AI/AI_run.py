@@ -90,7 +90,7 @@ class Controller(Node):
         # Weighting matrices
         self.Q_weight = np.diag([50, # x
                                  50, # y 
-                                 10, # psi
+                                 1, # psi
                                  1, # u
                                  1, # v
                                  1  # r
@@ -105,7 +105,7 @@ class Controller(Node):
 
         # Network parameters
         self.HL_size = 40
-        input_size = 6 # x, y, psi, u, v, r
+        input_size = 5 # x, y, psi, u, v, r
         output_size = 2 # u1, u2
         self.learning_rate = 1e-4
 
@@ -272,6 +272,7 @@ class Controller(Node):
                     self.future = None
                 return
 
+
         # Send new request
         request = RequestPath.Request()
         request.path_request.data = np.linspace(self.current_time, self.current_time + self.dt, 2, dtype=float)
@@ -288,7 +289,7 @@ class Controller(Node):
             cf.create_pose_marker(target_pose, self.pose_arrow_publisher)
 
         self.updateRobotState()
-
+        
         ################## Training automation ##################
 
         if self.trainer.loss and self.automate: # Make sure the loss has been initialized
@@ -316,7 +317,7 @@ class Controller(Node):
         if self.trainer.trainer_set: # Make sure the training has started
             x_m = self.trainer.state[0]
             y_m = self.trainer.state[1]
-            psi_m = self.trainer.state[5]
+            psi_m = self.trainer.state[2]
 
             x_d_m = self.trainer.target[0]
             y_d_m = self.trainer.target[1]
@@ -350,7 +351,9 @@ class Controller(Node):
             # self.get_logger().info(f"\n Train target: {self.trainer.target}") 
             # self.get_logger().info(f"\n Train error: {self.trainer.error_display[2]}")
             # self.get_logger().info(f"\n Network input: {self.trainer.input_display}")
-            # self.get_logger().info(f"\n Network input: {self.trainer.skew}")
+            # self.get_logger().info(f"\nRobot coordinates: \n{self.trainer.robot_frame_display}")
+            # self.get_logger().info(f"\n Skew input: {self.trainer.skew}")
+            # self.get_logger().info()(f"\n previous_target: {self.trainer.previous_target}")
             
         ################## Stop training and record data ##################
         
