@@ -90,7 +90,7 @@ class Controller(Node):
         # Weighting matrices
         self.Q_weight = np.diag([50, # x
                                  50, # y 
-                                 1, # psi
+                                 40, # psi
                                  1, # u
                                  1, # v
                                  1  # r
@@ -351,7 +351,7 @@ class Controller(Node):
             # self.get_logger().info(f"\n Train target: {self.trainer.target}") 
             # self.get_logger().info(f"\n Train error: {self.trainer.error_display[2]}")
             # self.get_logger().info(f"\n Network input: {self.trainer.input_display}")
-            # self.get_logger().info(f"\nRobot coordinates: \n{self.trainer.robot_frame_display}")
+            self.get_logger().info(f"\nRobot coordinates: \n{self.trainer.robot_frame_display}")
             # self.get_logger().info(f"\n Skew input: {self.trainer.skew}")
             # self.get_logger().info()(f"\n previous_target: {self.trainer.previous_target}")
             

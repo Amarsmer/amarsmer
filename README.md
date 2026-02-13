@@ -55,12 +55,14 @@ Gazebo will:
 
 # High-level control
 
-## Open loop
+## PID
 Basic control is available in the [auv_control package](https://github.com/CentraleNantesROV/auv_control)
 
-The simple node running an open-loop control (use the world launch first) can be ran as:
+The full launch file for cascaded PID control (including world launch) is ran with:
 
-`ros2 run amarsmer_control control.py`
+`ros2 launch amarsmer_control PID_launch.py`
+
+The target cna be adjusted with sliders (currently not compatible with path generation).
 
 ## MPC
 The full launch file for MPC control (including world launch) is ran with:

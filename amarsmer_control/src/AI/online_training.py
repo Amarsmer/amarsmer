@@ -132,12 +132,12 @@ class PyTorchOnlineTrainer:
 
         # psi_r = wrap(psi_r)
         # psi_skew = dynamicSkew(x_r, y_r, psi_r)
-        psi_skew = np.arctan2(y_r,x_r)
-        # psi_skew = theta_s(x_r,y_r)
+        # psi_skew = np.arctan2(y_r,x_r)
+        psi_skew = theta_s(x_r,y_r)
         self.skew = psi_skew # Monitoring
 
         d = np.sqrt(x_r**2+y_r**2)
-        d_w = 0.5
+        d_w = 1
 
         error[2] -= (np.exp(-(d*d_w)**2)*self.target[2] + (1 - np.exp(-(d*d_w)**2))*psi_skew)
         # error[2] = wrap(error[2])
