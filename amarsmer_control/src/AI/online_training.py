@@ -24,9 +24,9 @@ def dynamicSkew(x,y,psi):
 def wrap(angle):
     return (angle + np.pi) % (2 * np.pi) - np.pi
 
-def transformationMatrix(state):
+def transformationMatrix(in_coordinates):
     # Inverse transformation matrix that converts world coordinates to robot coordinates
-    x_w,y_w,theta = state[0:3].ravel()
+    x_w,y_w,theta = in_coordinates[0:3].ravel()
     c = np.cos
     s = np.sin
 
@@ -108,24 +108,38 @@ class PyTorchOnlineTrainer:
 
     def updateTarget(self, in_target):
         temp_target = in_target
-        if self.previous_target is not None:
-            temp_target[2] = np.unwrap([self.previous_target[2],temp_target[2]])[-1]
+        # if self.previous_target is not None:
+        #     temp_target[2] = np.unwrap([self.previous_target[2],temp_target[2]])[-1]
 
         self.target = temp_target
 
     def updateState(self, in_state):
         temp_state = in_state
-        if self.previous_state is not None:
-            temp_state[2] = np.unwrap([self.previous_state[2],temp_state[2]])[-1]
+        # if self.previous_state is not None:
+        #     temp_state[2] = np.unwrap([self.previous_state[2],temp_state[2]])[-1]
 
         self.state = temp_state
+
+    def robotCoordinates(self):
+        x_r,y_r,theta_r = self.state[0:3]
+        x_t,y_t,theta_t = self.target[0:3]
+
+        delta_x = x_t - x_r
+        delta_y = y_t - y_r
+
+        theta = theta_t - theta_r
+
+        x =  np.cos(theta_r)*delta_x + np.sin(theta_r)*delta_y
+        y = -np.sin(theta_r)*delta_x + np.cos(theta_r)*delta_y
+
+        return x,y,theta
 
     def computeError(self):
         # Compute error as a column vector
         error = self.state - np.array(self.target).reshape(-1, 1)
 
-        tf = transformationMatrix(self.state[0:3])
-        robot_coordinates = tf @ error[0:3] 
+        tf = transformationMatrix(error[0:3])
+        robot_coordinates = self.robotCoordinates()
         self.robot_frame_display = robot_coordinates
 
         x_r,y_r,psi_r = robot_coordinates
@@ -139,7 +153,7 @@ class PyTorchOnlineTrainer:
         d = np.sqrt(x_r**2+y_r**2)
         d_w = 1
 
-        error[2] -= (np.exp(-(d*d_w)**2)*self.target[2] + (1 - np.exp(-(d*d_w)**2))*psi_skew)
+        # error[2] -= (np.exp(-(d*d_w)**2)*self.target[2] + (1 - np.exp(-(d*d_w)**2))*psi_skew)
         # error[2] = wrap(error[2])
         error[2] = 2*np.sin(error[2]/2)
 

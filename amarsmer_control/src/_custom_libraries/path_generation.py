@@ -46,7 +46,7 @@ class PathGeneration(Node):
             z = 0.0
             roll = 0.0
             pitch = 0.0
-            yaw = 0.0
+            yaw = np.pi/2
         
         # Circle
         if path_shape == 'circle':
@@ -70,8 +70,8 @@ class PathGeneration(Node):
 
         # Sin line
         if path_shape == 'sin':
-            a = 3
-            f = 0.1
+            a = 1
+            f = 0.5
             vx = 0.5
 
             x = vx*t
