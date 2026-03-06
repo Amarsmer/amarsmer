@@ -10,6 +10,7 @@ import time
 import numpy as np
 from datetime import datetime
 import os
+from ament_index_python.packages import get_package_share_directory
 
 # ROS2 msg libraries
 from std_msgs.msg import String, Float32, Float32MultiArray
@@ -23,7 +24,6 @@ import custom_functions as cf
 from amarsmer_interfaces.srv import RequestPath
 
 # Training specific custom librairies
-from amarsmer_control import ROV
 from backprop import NN
 from online_training import PyTorchOnlineTrainer
 
@@ -39,8 +39,8 @@ class Controller(Node):
         super().__init__('ai_control', namespace='amarsmer')
 
         # self.declare_parameter('name', 'data')
-        self.declare_parameter('weight_name', '')        # Will load a saved weight file if specified, otherwise will create some
-        self.declare_parameter('train', True)            # Wether weight are updated, 'False' implies testing
+        self.declare_parameter('network_name', '')        # Will load a saved network file if specified, otherwise will create some
+        self.declare_parameter('train', True)            # Wether network are updated, 'False' implies testing
         self.declare_parameter('automate', True)         # Test automation will change the robot's pose if some loss requirements are met
         self.input_string = ['','']                      # Meant to be used as ['instruction', 'argument']
 
@@ -112,29 +112,31 @@ class Controller(Node):
         self.trainer = None
         self.training_initiated = False
 
-        # Weight loading
-        weight_name = self.get_parameter('weight_name').get_parameter_value().string_value
-        if weight_name == '':
-            self.get_logger().info(f"No weight loaded. Initializing random weights with hidden layer size: {self.HL_size}.")
+        # network loading
+        network_name = self.get_parameter('network_name').get_parameter_value().string_value
+        if network_name == '':
+            self.get_logger().info(f"No network loaded. Initializing random network weights with hidden layer size: {self.HL_size}.")
             self.network = NN(input_size, self.HL_size, output_size)
 
         else:
             # Check if the file exists
             try:
-                with open(f'/home/noe/ros2_ws/saved_weights/{weight_name}.json') as fp:
+                # pkg_path = get_package_share_directory('amarsmer_control')
+                # file_path = os.path.join(pkg_path, 'saved_networks', f'{network_name}.json')
+                with open(f'saved_networks/{network_name}.json') as fp:
                     json_obj = json.load(fp)
                 
             # If it does not, display error message and create a new network
             except:
-                self.get_logger().info(f"#################### ERROR: no weight file with the name: {weight_name}. Initializing random weights with hidden layer size: {self.HL_size}. ####################")
+                self.get_logger().info(f"#################### ERROR: no network file with the name: {network_name}. Initializing random network with hidden layer size: {self.HL_size}. ####################")
                 self.network = NN(input_size, self.HL_size, output_size)
 
             # If it exists, adjust the hidden layer size and load the network
             else:
                 self.HL_size = len(json_obj["input_weights"][0][:])
                 self.network = NN(input_size, self.HL_size, output_size)
-                self.network.load_weights_from_json(json_obj)
-                self.get_logger().info(f"Loading weight json: {weight_name}.")
+                self.network.load_network_from_json(json_obj)
+                self.get_logger().info(f"Loading network json: {network_name}.")
 
         ### Test automation
         self.automate = self.get_parameter('automate').get_parameter_value().bool_value
@@ -159,7 +161,7 @@ class Controller(Node):
 
         # Initiate monitoring data, both stored as .npy and published on a topic
         self.monitoring = []
-        self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2', 'grad1', 'grad2', 'loss_X', 'loss_u', 'skew', 't']) # Naming the variables in the first row, useful as is and even more so if data points change between version
+        self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2', 'grad1', 'grad2', 'loss_X', 'loss_u', 't']) # Naming the variables in the first row, useful as is and even more so if data points change between version
 
         self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
 
@@ -314,9 +316,9 @@ class Controller(Node):
         ################## Save and publish data for monitoring ##################
 
         if self.trainer.trainer_set: # Make sure the training has started
-            x_m = self.trainer.state[0]
-            y_m = self.trainer.state[1]
-            psi_m = self.trainer.state[5]
+            x_m = self.trainer.state[0][0]
+            y_m = self.trainer.state[1][0]
+            psi_m = self.trainer.state[2][0]
 
             x_d_m = self.trainer.target[0]
             y_d_m = self.trainer.target[1]
@@ -325,11 +327,10 @@ class Controller(Node):
             u = self.trainer.u.ravel()
             grad = self.trainer.gradient_display.ravel()
             loss = self.trainer.loss_display.ravel()
-            skew = self.trainer.skew
             t = self.get_time() - self.t0
 
-            data_array = [x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], grad[0], grad[1], loss[0], loss[1], skew, t]
-
+            data_array = [x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], grad[0], grad[1], loss[0], loss[1], t]
+            
             self.monitoring.append(data_array)
 
             publisher_msg = Float32MultiArray()
@@ -355,22 +356,21 @@ class Controller(Node):
         ################## Stop training and record data ##################
         
         if self.input_string[0] == 'stop': # Stop training session from terminal
-            weight_name = self.input_string[1]
+            network_name = self.input_string[1]
             self.input_string = ['','']
             self.trainer.running = False
             self.training_thread.join(timeout=5)
 
-            # Save the weights
-            json_obj = self.network.save_weights_to_json()
-            with open(f'saved_weights/{weight_name}.json', 'w') as fp:
+            # Save the network
+            json_obj = self.network.save_network_to_json()
+            with open(f'saved_networks/{network_name}.json', 'w') as fp:
                 
                 json.dump(json_obj, fp)
 
             self.get_logger().info("Training stopped")
 
-            title = f'data/AI_data/{self.date}-weightfile_{weight_name}-HL_{self.HL_size}-AI_data'
+            title = f'data/AI_data/{self.date}-networkfile_{network_name}-HL_{self.HL_size}-AI_data'
             np.save(title, self.monitoring)
-
 
 rclpy.init()
 node = Controller()

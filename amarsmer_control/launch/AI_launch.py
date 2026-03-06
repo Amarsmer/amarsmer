@@ -1,38 +1,23 @@
 from simple_launch import SimpleLauncher
 from pathlib import Path
 
-
 def generate_launch_description():
 
     sl = SimpleLauncher(use_sim_time = True)
 
-    sl_trajectory = sl.declare_arg('trajectory', default_value = 'station_keeping')
-    sl_weight_name = sl.declare_arg('weight_name', default_value = '')
-    sl_train = sl.declare_arg('train', default_value = True)
-    sl_automate = sl.declare_arg('automate', default_value = True)
-    sl_quaternions = sl.declare_arg('use_quaternions', default_value = False)
-
+    sl_trajectory = sl.declare_arg('trajectory', default_value = 'station_keeping') # Load specific trajectory from path_generation
+    sl_network_name = sl.declare_arg('network_name', default_value = '')            # Load saved network (name only, no ".json")
+    sl_train = sl.declare_arg('train', default_value = True)                        # Whether to train or test the network
+    sl_automate = sl.declare_arg('automate', default_value = False)                 # Will teleport the robot if the criteria is small enough for a set duration, mostly used with the station_keeping task
 
     sl.include('amarsmer_description', 'world_launch.py', launch_arguments={'sliders': False})
 
     sl.node('amarsmer_control', 'path_generation.py', parameters={'trajectory' : sl_trajectory})
 
-    sl.node('amarsmer_control', 'path_publisher.py')
+    sl.node('amarsmer_control', 'path_publisher.py') # Used to display the path in rviz
 
-    sl.node('amarsmer_control', 'AI_run.py', parameters={'weight_name' : sl_weight_name,
+    sl.node('amarsmer_control', 'AI_run.py', parameters={'network_name' : sl_network_name,
                                                          'train': sl_train,
-                                                         'automate': sl_automate,
-                                                         'use_quaternions': sl_quaternions})
-
-    """
-    layout_file = str(Path(__file__).parents[2] / "plotJuggler_2D_BP_monitoring.xml")
-
-    sl.node(
-        package="plotjuggler",
-        executable="plotjuggler",
-        name="plotjuggler_with_layout",
-        arguments=["--layout", layout_file]
-    )
-    """
+                                                         'automate': sl_automate})
     
     return sl.launch_description()

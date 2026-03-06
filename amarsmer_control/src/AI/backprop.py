@@ -43,7 +43,7 @@ class NN(nn.Module):
             outputs = self.forward(x)
             return outputs.tolist()
     
-    def load_weights_from_json(self, json_obj):
+    def load_network_from_json(self, json_obj):
         # Load weights from a JSON file
         hidden_size = len(json_obj["input_weights"][0][:])
 
@@ -64,7 +64,7 @@ class NN(nn.Module):
             self.hidden.weight.copy_(input_weights.t())
             self.output.weight.copy_(output_weights.t())
             
-    def save_weights_to_json(self):
+    def save_network_to_json(self):
         # Save weights in JSON file
         # Convert input weights in original format
         input_weights = []
