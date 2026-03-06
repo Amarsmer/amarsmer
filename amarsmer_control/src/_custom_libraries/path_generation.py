@@ -46,7 +46,7 @@ class PathGeneration(Node):
             z = 0.0
             roll = 0.0
             pitch = 0.0
-            yaw = np.pi/2
+            yaw = 0.0
         
         # Circle
         if path_shape == 'circle':

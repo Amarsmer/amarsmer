@@ -66,6 +66,18 @@ def odometry(msg, quat = False):
 
     return pose, twist
 
+def planeFromQuaternion(inState):
+    # Extract position
+    x,y,z = inState[0:3]
+
+    #Convert and extract euler angles
+    phi,theta,psi = R.from_quat(inState[3:7]).as_euler('xyz')
+
+    # Extract robot frame's speeds
+    u,v,r = inState[7:]
+
+    return np.array([x,y,psi,u,v,r]).reshape(-1,1)
+
 def quaternion_multiply(q0, q1): # From https://docs.ros.org/en/foxy/Tutorials/Intermediate/Tf2/Quaternion-Fundamentals.html
     """
     Multiplies two quaternions.
@@ -103,30 +115,42 @@ def quaternion_multiply(q0, q1): # From https://docs.ros.org/en/foxy/Tutorials/I
     return final_quaternion
 
 def quaternion_error(q2, q1): # Returns "q2-q1"
-    q1[3] = -prev_pose.pose.orientation.w # Negate for inverse
+    q1[3] *= -1 # Negate for inverse
 
     return quaternion_multiply(q2, q1)
 
-def make_pose(pose_list): #TODO: Make it usable in 3D
-    x = pose_list[0]
-    y = pose_list[1]
-    theta = pose_list[2]
-
+def make_pose(pose_list, quat = False): #TODO: Make it usable in 3D
     pose = Pose()
 
-    # Position
-    pose.position.x = x
-    pose.position.y = y
-    pose.position.z = 0.0
+    if quat:
+        # Position
+        pose.position.x = float(pose_list[0])
+        pose.position.y = float(pose_list[1])
+        pose.position.z = float(pose_list[2])
 
-    # Orientation from yaw (theta)
-    qz = np.sin(theta / 2.0)
-    qw = np.cos(theta / 2.0)
+        pose.orientation.x = float(pose_list[3])
+        pose.orientation.y = float(pose_list[4])
+        pose.orientation.z = float(pose_list[5])
+        pose.orientation.w = float(pose_list[6])
 
-    pose.orientation.x = 0.0
-    pose.orientation.y = 0.0
-    pose.orientation.z = qz
-    pose.orientation.w = qw
+    else:
+        x = pose_list[0]
+        y = pose_list[1]
+        theta = pose_list[2]
+
+        # Position
+        pose.position.x = x
+        pose.position.y = y
+        pose.position.z = 0.0
+
+        # Orientation from yaw (theta)
+        qz = np.sin(theta / 2.0)
+        qw = np.cos(theta / 2.0)
+
+        pose.orientation.x = 0.0
+        pose.orientation.y = 0.0
+        pose.orientation.z = qz
+        pose.orientation.w = qw
 
     return pose
 
