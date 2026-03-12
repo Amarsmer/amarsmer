@@ -173,6 +173,41 @@ def create_pose_marker(inPose, inPub):
 
     inPub.publish(marker)
 
+def compute_target(path, dt):
+
+        def get_yaw_from_quaternion(q):
+            siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+            cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+            return np.arctan2(siny_cosp, cosy_cosp)
+
+        # Extract current target and next step target
+        poses = path.poses[:2]
+        present = poses[0].pose
+        future = poses[1].pose
+
+        # Compute position
+        x = future.position.x
+        y = future.position.y
+        psi = get_yaw_from_quaternion(future.orientation)
+        psi = (psi + np.pi) % (2 * np.pi) - np.pi
+
+        # Compute speeds
+        dx = x - present.position.x
+        dy = y - present.position.y
+        u = np.hypot(dx, dy) / dt
+
+        psi_prev = get_yaw_from_quaternion(present.orientation)
+
+        psi_mid = (psi + psi_prev) / 2.0
+        dx_b =  np.cos(psi_mid) * dx + np.sin(psi_mid) * dy
+        dy_b = -np.sin(psi_mid) * dx + np.cos(psi_mid) * dy
+        v = dy_b / dt 
+
+        dpsi = (psi - psi_prev + np.pi) % (2 * np.pi) - np.pi
+        r = dpsi / dt
+        
+        return [x, y, psi, u, v, r]
+
 
 #################### Trajectory generation ####################
 def seabed_scanning(t):

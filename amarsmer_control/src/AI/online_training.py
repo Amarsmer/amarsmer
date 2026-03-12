@@ -8,15 +8,32 @@ import numpy as np
 def theta_s(x, y): # Angle skew, used to prevent the singularity in x=0
     return math.tanh(5.*x)*math.atan(10.*y)
 
+def wrap_angle(angle):
+    return (angle + np.pi) % (2 * np.pi) - np.pi
+
+def inRobotFrame(robot_coords, target_coords):
+    x_r,y_r,psi_r,_,_,_ = robot_coords
+    x_t,y_t,psi_t,_,_,_ = target_coords
+
+    cos = np.cos
+    sin = np.sin
+
+    x = (x_t - x_r)*cos(psi_r) + (y_t - y_r)*sin(psi_r)
+    y = (y_t - y_r)*cos(psi_r) - (x_t - x_r)*sin(psi_r)
+    psi = wrap_angle(psi_t) - wrap_angle(psi_r)
+
+    return x[0],y[0],psi[0]
+
 class PyTorchOnlineTrainer:
-    def __init__(self, robot, nn_model, in_learning_rate = 5e-4, Q=np.eye(6), R=np.eye(3)):
+    def __init__(self, robot, nn_model, in_learning_rate = 5e-4, in_Q=np.eye(6), in_R=np.eye(3)):
 
         self.robot = robot
         self.network = nn_model
+        self.unwrap = False
 
         # Weighting matrices
-        self.Q = Q
-        self.R = R
+        self.Q = in_Q
+        self.R = in_R
         
         # Training state
         self.running = False
@@ -30,10 +47,15 @@ class PyTorchOnlineTrainer:
 
         # Variables init
         self.state = None
-        self.error = None
         self.target = None
+        self.error = None
         self.u = np.zeros(2)
         self.loss = None
+
+        self.previous_state = None
+        self.previous_target = None
+
+        self.robot_frame = [0,0,0]
 
         ## Modeling
         # Compute B matrix (constant)
@@ -76,17 +98,29 @@ class PyTorchOnlineTrainer:
         self.loss_display = np.zeros(2)
 
     def updateTarget(self, in_target):
-        self.target = in_target
+        temp_target = in_target
+
+        if self.unwrap and self.previous_target is not None:
+            temp_target[2] = np.unwrap([self.previous_target[2],temp_target[2]])[-1]
+
+        self.target = temp_target
 
     def updateState(self, in_state):
-        self.state = in_state
+        temp_state = in_state
+
+        if self.unwrap and self.previous_state is not None:
+            temp_state[2] = np.unwrap([self.previous_state[2],temp_state[2]])[-1]
+
+        self.state = temp_state
 
     def computeError(self):
         # Compute error as a column vector
         error = self.state - np.array(self.target).reshape(-1, 1)
 
+        self.robot_frame = inRobotFrame(self.state, self.target)
+
         # Apply angle disambiguation
-        error[2] = 2*np.sin(error[2]/2)
+        error[2] = 2*np.sin(wrap_angle(error[2])/2)
 
         skew = theta_s(self.state[0], self.state[1])
         # error[2] -= skew # Yaw skew
@@ -197,6 +231,9 @@ class PyTorchOnlineTrainer:
                 self.optimizer.zero_grad()
                 u_tensor.backward(gradient=grad_tensor)
                 self.optimizer.step()
+
+            self.previous_target = self.target
+            self.previous_state = self.state
 
             # Monitoring data for debugging purposes
             self.state_train_display = self.state

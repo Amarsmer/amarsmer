@@ -39,14 +39,14 @@ class Controller(Node):
         super().__init__('ai_control', namespace='amarsmer')
 
         # self.declare_parameter('name', 'data')
-        self.declare_parameter('network_name', '')        # Will load a saved network file if specified, otherwise will create some
+        self.declare_parameter('network_name', '')       # Will load a saved network file if specified, otherwise will initialize one
         self.declare_parameter('train', True)            # Wether network are updated, 'False' implies testing
         self.declare_parameter('automate', True)         # Test automation will change the robot's pose if some loss requirements are met
         self.input_string = ['','']                      # Meant to be used as ['instruction', 'argument']
 
         self.rov = ROV(self, thrust_visual = True)
 
-        ################## ROS2 Communication ##################
+        #################################### ROS2 Communication ####################################
 
         self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
         self.str_input_subscriber = self.create_subscription(String, '/amarsmer/input_str', self.str_input_callback, 10) # Used to interact with the training process
@@ -83,7 +83,7 @@ class Controller(Node):
                                  ])
         """
         
-        ################## Initiating variables ##################
+        #################################### Initiating variables ####################################
 
         self.ai_path = Path()
         
@@ -139,12 +139,15 @@ class Controller(Node):
                 self.get_logger().info(f"Loading network json: {network_name}.")
 
         ### Test automation
+        # If the loss is below the threshold for the entire set delay, the robot is moved to the next pose
         self.automate = self.get_parameter('automate').get_parameter_value().bool_value
         if self.automate:
             self.loss_threshold = 15.
             self.previous_loss = 1e10 # Initialized at an arbitrarily high value instead of None to reduce the number of if statements
             self.minimal_loss_timer = None
             self.acceptable_loss_delay = 10. # If the loss is below the threshold for this amount of time (s), the robot is moved
+            
+            # Poses to be parsed 
             self.pose_index = 0
             self.initial_poses = [np.array([4., 4., 0., 0., 0., 1.]),
                                 np.array([-4., -4., 0., 0., 0., 4.]),
@@ -161,7 +164,7 @@ class Controller(Node):
 
         # Initiate monitoring data, both stored as .npy and published on a topic
         self.monitoring = []
-        self.monitoring.append(['x','y','psi','x_d','y_d','psi_d','u1','u2', 'grad1', 'grad2', 'loss_X', 'loss_u', 't']) # Naming the variables in the first row, useful as is and even more so if data points change between version
+        self.monitoring.append(['t','x','y','psi','x_d','y_d','psi_d','u1','u2', 'grad1', 'grad2', 'loss_X', 'loss_u']) # Naming the variables in the first row, useful as is and even more so if data points change between version
 
         self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
 
@@ -174,41 +177,6 @@ class Controller(Node):
 
         self.rov.current_pose = pose
         self.rov.current_twist = twist
-
-    def compute_target(self, path):
-
-        def get_yaw_from_quaternion(q):
-            siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
-            cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-            return np.arctan2(siny_cosp, cosy_cosp)
-
-        # Extract current target and next step target
-        poses = path.poses[:2]
-        present = poses[0].pose
-        future = poses[1].pose
-
-        # Compute position
-        x = future.position.x
-        y = future.position.y
-        psi = get_yaw_from_quaternion(future.orientation)
-        psi = (psi + np.pi) % (2 * np.pi) - np.pi
-
-        # Compute speeds
-        dx = x - present.position.x
-        dy = y - present.position.y
-        u = np.hypot(dx, dy) / self.dt
-
-        psi_prev = get_yaw_from_quaternion(present.orientation)
-
-        psi_mid = (psi + psi_prev) / 2.0
-        dx_b =  np.cos(psi_mid) * dx + np.sin(psi_mid) * dy
-        dy_b = -np.sin(psi_mid) * dx + np.cos(psi_mid) * dy
-        v = dy_b / self.dt 
-
-        dpsi = (psi - psi_prev + np.pi) % (2 * np.pi) - np.pi
-        r = dpsi / self.dt
-        
-        return [x, y, psi, u, v, r]
     
     def str_input_callback(self, msg: String):
         self.input_string = msg.data.split()
@@ -224,7 +192,7 @@ class Controller(Node):
         self.trainer.updateState(self.state)
 
     def run(self):
-        ################## Wait for the robot model to be initialized ##################
+        #################################### Wait for the robot model to be initialized ####################################
 
         if not self.rov.ready():
             return
@@ -232,7 +200,7 @@ class Controller(Node):
         # Update time
         self.current_time = self.get_time()
 
-        ################## Initialize ##################
+        #################################### Initialize ####################################
 
         if not self.training_initiated: # This code used to be in a while loop and requires adjustements to work as a ROS2 node
             self.training_initiated = True
@@ -245,7 +213,7 @@ class Controller(Node):
             train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
 
             # Main training
-            self.target = [0.,0.,0.,0.,0.,0.] # Initial target
+            self.target = [0.,0.,0.,0.,0.,0.] # Default initial target
 
             self.updateRobotState() # The trainer thread requires manual update of the robot's pose and twist
             self.trainer.updateTarget(self.target) # To be used for trajectory tracking
@@ -256,7 +224,7 @@ class Controller(Node):
             self.trainer.running = True
             self.training_thread.start()
 
-        ################## Request Path ##################
+        #################################### Request Path ####################################
 
         # Check if previous future is still pending
         if self.future is not None:
@@ -282,7 +250,7 @@ class Controller(Node):
 
         if self.ai_path.poses: # Make sure the path is not empty
 
-            self.target = self.compute_target(self.ai_path)
+            self.target = cf.compute_target(self.ai_path, self.dt)
             self.trainer.updateTarget(self.target)
 
             # Display target in gazebo
@@ -291,7 +259,7 @@ class Controller(Node):
 
         self.updateRobotState()
 
-        ################## Training automation ##################
+        #################################### Training automation ####################################
 
         if self.trainer.loss and self.automate: # Make sure the loss has been initialized
 
@@ -300,8 +268,7 @@ class Controller(Node):
                 if self.previous_loss >= self.loss_threshold :
                     self.minimal_loss_timer = self.current_time
             else:
-                self.minimal_loss_timer = None
-
+                self.minimal_loss_timer = None # Prevents false positives of robot briefly gets below threshold
 
             # Change robot's pose after loss remains under threshold for a set time
             if self.minimal_loss_timer and (self.current_time - self.minimal_loss_timer) > self.acceptable_loss_delay:
@@ -313,7 +280,7 @@ class Controller(Node):
 
             self.previous_loss = self.trainer.loss
 
-        ################## Save and publish data for monitoring ##################
+        #################################### Save and publish data for monitoring ####################################
 
         if self.trainer.trainer_set: # Make sure the training has started
             x_m = self.trainer.state[0][0]
@@ -329,7 +296,7 @@ class Controller(Node):
             loss = self.trainer.loss_display.ravel()
             t = self.get_time() - self.t0
 
-            data_array = [x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], grad[0], grad[1], loss[0], loss[1], t]
+            data_array = [t, x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], grad[0], grad[1], loss[0], loss[1]]
             
             self.monitoring.append(data_array)
 
@@ -351,11 +318,11 @@ class Controller(Node):
             # self.get_logger().info(f"\n Train target: {self.trainer.target}") 
             # self.get_logger().info(f"\n Train error: {self.trainer.error_display[2]}")
             # self.get_logger().info(f"\n Network input: {self.trainer.input_display}")
-            # self.get_logger().info(f"\n Network input: {self.trainer.skew}")
+            # self.get_logger().info(f"\n Target in robot frame: {self.trainer.robot_frame}")
             
-        ################## Stop training and record data ##################
+        #################################### Stop training and record data ####################################
         
-        if self.input_string[0] == 'stop': # Stop training session from terminal
+        if self.input_string[0] == 'stop': # Stop training session from terminal, there is currently no way to restard training
             network_name = self.input_string[1]
             self.input_string = ['','']
             self.trainer.running = False

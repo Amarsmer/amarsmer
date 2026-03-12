@@ -1,6 +1,6 @@
 # AMARSMER ROS2
 
-This repository contains the robot description and necessary launch files to describe and simulate the Plasmar2 (unmanned underwater vehicle) with Gazebo and its hydrodynamics plugins under ROS2.
+This repository contains the robot description and necessary launch files to describe and simulate the Plasmar2 (uncrewed underwater vehicle) with Gazebo and its hydrodynamics plugins under ROS2.
 
 Additionnal steps are included to make sure this can be used starting from a fresh Ubuntu install.
 
@@ -62,12 +62,18 @@ The full launch file for cascaded PID control (including world launch) is ran wi
 
 `ros2 launch amarsmer_control PID_launch.py`
 
-The target cna be adjusted with sliders (currently not compatible with path generation).
+The target can be adjusted with sliders (PID currently not compatible with path generation).
 
 ## MPC
 The full launch file for MPC control (including world launch) is ran with:
 
 `ros2 launch amarsmer_control MPC_launch.py`
+
+As QoL, some parameters can be set from terminal:
+
+`ros2 launch amarsmer_control MPC_launch.py trajectory:='sin' robot_file:=thrusters_plasmar2`
+
+Currently only 'thrusters_plasmar2' and 'thrusters_plasmar_uvr' are available.
 
 ## AI
 The full launch file for AI training and control (including world launch) is ran with:
@@ -76,11 +82,11 @@ The full launch file for AI training and control (including world launch) is ran
 
 As QoL, some parameters can be set from terminal:
 
-`ros2 launch amarsmer_control AI_launch.py trajectory:='sin' weight_name:='name' train:=True`
+`ros2 launch amarsmer_control AI_launch.py trajectory:='sin' network_name:='name' train:=True`
 
-Currently the training starts automatically. If considered satisfactory, it can be stopped and the associated weights saved with the following command:
+Currently the training starts automatically. If considered satisfactory, it can be stopped and the associated network saved with the following command:
 
-'ros2 topic pub --once /amarsmer/input_str std_msgs/msg/String "data: stop [weight_name]"'
+'ros2 topic pub --once /amarsmer/input_str std_msgs/msg/String "data: stop [network_name]"'
 
 # License
 Amarsmer package is open-sourced under the MIT License. See the LICENSE file for details.

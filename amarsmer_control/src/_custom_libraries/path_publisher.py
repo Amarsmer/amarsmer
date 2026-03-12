@@ -10,7 +10,8 @@ from builtin_interfaces.msg import Time
 from amarsmer_interfaces.srv import RequestPath
 
 """
-Sends a client request to path_generation and saves the full path msg, then publishes it to rviz
+Sends a client request to path_generation and saves the full path msg, then publishes it to rviz.
+This is an open loop that simply displays the currently selected path applied to the robot.
 """
 class PathPublisher(Node):
     def __init__(self):
