@@ -10,6 +10,11 @@ find_package(rosidl_default_generators REQUIRED)
 
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
+install(PROGRAMS src/control_manager.py
+        DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS src/simulation_interface.py
+        DESTINATION lib/${PROJECT_NAME})
+
 install(PROGRAMS src/AI/AI_run.py
         DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS src/AI/online_training.py
@@ -19,16 +24,17 @@ install(PROGRAMS src/AI/backprop.py
 
 install(PROGRAMS src/MPC/mpc_control.py
         DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS src/MPC/ur_mpc_control.py
-        DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS src/MPC/uvr_mpc_control.py
+install(PROGRAMS src/MPC/planar_mpc_control.py
         DESTINATION lib/${PROJECT_NAME})
 
-install(PROGRAMS src/MPC/ur_mpc.py
-        DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS src/MPC/uvr_mpc.py
+install(PROGRAMS src/MPC/planar_mpc.py
         DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS src/MPC/full_mpc.py
+        DESTINATION lib/${PROJECT_NAME})
+
+install(PROGRAMS src/PID/PID_control.py
+        DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS src/PID/PID.py
         DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS src/_custom_libraries/path_publisher.py

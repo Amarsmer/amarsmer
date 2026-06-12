@@ -108,7 +108,7 @@
 </gazebo>
 </xacro:macro>
 
-  <!-- all 4 thrusters -->
+  <!-- all thrusters -->
     
   <xacro:thruster thruster_id="1">
     <origin xyz="-${cylinder_l/2} -${cylinder_r} 0" rpy="0 0 -${pi/2}"/>

@@ -1,0 +1,39 @@
+link_name: "${ns}/base_link"
+
+robot:
+  mass: 14.8
+  z_cog: 0.02
+
+  inertia:
+    ixx: 5.2539
+    ixy: 0.0144
+    ixz: 0.3341
+    iyy: 7.9420
+    iyz: 0.026
+    izz: 6.9123
+
+hydrodynamics:
+
+  added_mass:
+    xDotU: -5.5
+    yDotV: -12.7
+    zDotW: -14.57
+    kDotP: -0.12
+    mDotQ: -0.12
+    nDotR: -0.12
+
+  quadratic_damping:
+    xUabsU: -33.8
+    yVabsV: -54.26875
+    zWabsW: -73.37135
+    kPabsP: -40.0
+    mQabsQ: -40.0
+    nRabsR: -40.0
+
+  linear_damping:
+    xU: -25.15
+    yV: -7.364
+    zW: -17.955
+    kP: -10.888
+    mQ: -20.761
+    nR: -3.744

@@ -30,10 +30,6 @@ class ROV:
                                                 QoSProfile(depth=1,
                                                 durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
 
-        # Pose
-        self.current_pose = None
-        self.current_twist = None
-
         # state feedback
         self.p = None
         self.R = None
@@ -64,7 +60,7 @@ class ROV:
         return self.thruster_pub
 
     def ready(self):
-        return self.rb is not None and self.current_pose is not None
+        return self.rb is not None
 
     def odom_cb(self, odom: Odometry):
 
@@ -107,17 +103,10 @@ class ROV:
                 self.wrench_pub[i].publish(wrench_msg)
 
             # Base link (used to easily see the robot's orientation)
-            wrench_msg = WrenchStamped()
+            # wrench_msg = WrenchStamped()
             wrench_msg.header.frame_id = "amarsmer/base_link"
             wrench_msg.wrench.force.x = 10.0
-            wrench_msg.wrench.force.y = 0.0
-            wrench_msg.wrench.force.z = 0.0
-            wrench_msg.wrench.torque.x = 0.0
-            wrench_msg.wrench.torque.y = 0.0
-            wrench_msg.wrench.torque.z = 0.0
             self.wrench_pub[-1].publish(wrench_msg)
-
-            
 
     def read_model(self, msg):
 
@@ -136,13 +125,8 @@ class ROV:
 
         self.wrench_pub.append(self.node.create_publisher(WrenchStamped, 'amarsmer_base', 1))
 
-        # print('Thrusters:', thrusters)
-
         root = robot.get_root()
         base_link = robot.link_map[root]
-        # print('mass:',l1.inertial.mass)
-        # print('rg:', l1.inertial.origin)
-        # print('inertia:', l1.inertial.inertia)
 
         # Read the robot's dynamic parameters
         Ma = [0]*6

@@ -9,6 +9,55 @@ from visualization_msgs.msg import Marker
 from scipy.spatial.transform import Rotation as R
 import numpy as np
 import os
+from ament_index_python.packages import get_package_share_directory
+import yaml
+
+#################### Yaml reading ####################
+
+def read_model():
+    # Locate YAML file
+    pkg_path = get_package_share_directory("amarsmer_control")
+
+    yaml_path = os.path.join(
+        pkg_path,
+        "config",
+        "robot.yaml"
+    )
+
+    ## Load YAML
+    with open(yaml_path, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    ## Robot properties
+    robot = cfg["robot"]
+
+    mass = robot["mass"]
+    z_cog = robot["z_cog"]
+
+    # Inertia tensor coefficients
+    inertia = np.array(list(
+    robot["inertia"].values()
+    ))
+
+    ## Hydrodynamics
+    hydro = cfg["hydrodynamics"]
+
+    # Added mass coefficients
+    added_mass = np.array(list(
+        hydro["added_mass"].values()
+    ))
+
+    # Linear damping coefficients
+    linear_damping = np.array(list(
+        hydro["linear_damping"].values()
+    ))
+
+    # Quadratic damping coefficients
+    quadratic_damping = np.array(list(
+        hydro["quadratic_damping"].values()
+    ))
+
+    return mass, inertia, added_mass, linear_damping, quadratic_damping
 
 #################### Gazebo interaction ####################
 def pause_gz(pause):

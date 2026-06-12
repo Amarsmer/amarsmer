@@ -13,7 +13,6 @@
   
   <xacro:arg name="density" default="1000"/>
 
-  
   <xacro:property name="ns" value="$(arg namespace)"/>
   <xacro:property name="density" value="$(arg density)"/>
 
@@ -21,10 +20,24 @@
   <xacro:property name="x_size" value="0.40"/>
   <xacro:property name="y_size" value="0.25"/>
   <xacro:property name="z_size" value="0.1"/>
-
-  <xacro:property name="mass" value="14.8"/>
       
+  <!-- Read main yaml file for inertia and mass -->
+  <xacro:arg name="config_file"
+             default="$(find amarsmer_control)/config/robot.yaml"/>
+
+  <xacro:property name="config_path"
+                  value="$(arg config_file)"/>
+
+  <xacro:property name="cfg"
+                  value="${xacro.load_yaml(config_path)}"/>
+
+  <xacro:property name="robot"
+                  value="${cfg['robot']}"/>
+
   <!-- other props -->
+  <xacro:property name="mass"
+                value="${robot['mass']}"/>
+
   <xacro:property name="prop_mass" value="0.07"/>
   
   <!-- to set correct buoyancy volume with 1 % positive factor -->
@@ -34,24 +47,22 @@
   <!-- Center of gravity -->
   <xacro:property name="z_cog" value="${-buoyant_correction*z_size}"/>
 
+  <!-- <link name="${ns}/base_link"> -->
 
   <!-- Vehicle base link -->
     <link name="${ns}/base_link">
     <inertial>
-        <mass value="${mass}"/>
+        <mass value="${robot['mass']}"/>
         <origin xyz="0 0 ${z_cog}" rpy="0 ${pi/2} 0"/>
         
-    <!-- BlueROV2 values from "Model Predictive Control for the BlueROV2", 
-        Emil Már Einarsson, Andris Lipenitis, Master thesis, 2020 
-        for now make Ignition crash?-->   
-<!--         <inertia ixx="0.21" ixy="0.00" ixz="0.00" iyy="0.245" iyz="0.00" izz="0.245"/> -->
-        <inertia ixx="5.2539" ixy="0.0144" ixz="0.3341" iyy="7.9420" iyz="0.026" izz="6.9123"/>
+        <inertia
+        ixx="${robot['inertia']['ixx']}"
+        ixy="${robot['inertia']['ixy']}"
+        ixz="${robot['inertia']['ixz']}"
+        iyy="${robot['inertia']['iyy']}"
+        iyz="${robot['inertia']['iyz']}"
+        izz="${robot['inertia']['izz']}"/>
         
-            <!-- Perfect rectangle -->
-<!--        <inertia
-        ixx="${mass/12*(y_size*y_size+z_size*z_size)}" ixy="0.0" ixz="0.0"
-        iyy="${mass/12*(x_size*x_size + z_size*z_size)}" iyz="0.0"
-        izz="${mass/12*(x_size*x_size + y_size*y_size)}" />-->
     </inertial>
     <visual>
     <origin rpy="0 ${pi/2} 0" xyz="0 0 0"/>

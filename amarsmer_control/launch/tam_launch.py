@@ -9,9 +9,6 @@ def generate_launch_description():
         sl.node('thruster_manager', 'thruster_manager_node',
                 parameters = {'control_frame': 'amarsmer/base_link'})
 
-
-
-
     return sl.launch_description()
 
 

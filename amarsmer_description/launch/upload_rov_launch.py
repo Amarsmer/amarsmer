@@ -9,14 +9,15 @@ sl.declare_arg('camera', True)
 sl.declare_arg('gazebo_world_name', 'none')
 
 sl.declare_arg('thr','thrusters_plasmar2')
-sl.declare_arg('spawn_pose', default_value = "0.0 0.0 0.0 0.0 0.0 0.0")
+sl.declare_arg('nb_thr',4)
 
-sl.declare_gazebo_axes(x=-4, y=4, z=0., roll=0.,pitch=0., yaw=-1)
+sl.declare_gazebo_axes(x=0., y=0., z=0., roll=0.,pitch=0., yaw=0.)
 
 def launch_setup():
     
     ns = sl.arg('namespace')
     thr = sl.arg('thr')
+    nb_thr = sl.arg('nb_thr')
 
     if sl.arg('gazebo_world_name') != 'none':
         GazeboBridge.set_world_name(sl.arg('gazebo_world_name'))
@@ -51,31 +52,17 @@ def launch_setup():
             sl.node('pose_to_tf',parameters={'child_frame': ns+'/base_link_gt'})
         
         # thrusters and steering
+        for t in range(1, 1+nb_thr):
+            thruster = f'thruster{t}'
+            gz_thr_topic = f'/{ns}/{thruster}/cmd'
+            bridges.append(GazeboBridge(gz_thr_topic, f'cmd_{thruster}', 'std_msgs/Float64', GazeboBridge.ros2gz))
 
-        if thr == 'thrusters_plasmar2':
-
-            for t in range(1, 5):
-                thruster = f'thruster{t}'
-                gz_thr_topic = f'/{ns}/{thruster}/cmd'
-                bridges.append(GazeboBridge(gz_thr_topic, f'cmd_{thruster}', 'std_msgs/Float64', GazeboBridge.ros2gz))
-
-                steering = f'/model/{ns}/joint/thruster{t}_steering/0/cmd_pos'
-                bridges.append(GazeboBridge(steering, f'cmd_{thruster}_steering', 'std_msgs/Float64', GazeboBridge.ros2gz))
-
-        elif thr == 'thrusters_plasmar_uvr':
-            for t in range(1, 4):
-                thruster = f'thruster{t}'
-                gz_thr_topic = f'/{ns}/{thruster}/cmd'
-                bridges.append(GazeboBridge(gz_thr_topic, f'cmd_{thruster}', 'std_msgs/Float64', GazeboBridge.ros2gz))
-
-                steering = f'/model/{ns}/joint/thruster{t}_steering/0/cmd_pos'
-                bridges.append(GazeboBridge(steering, f'cmd_{thruster}_steering', 'std_msgs/Float64', GazeboBridge.ros2gz))
-
+            steering = f'/model/{ns}/joint/thruster{t}_steering/0/cmd_pos'
+            bridges.append(GazeboBridge(steering, f'cmd_{thruster}_steering', 'std_msgs/Float64', GazeboBridge.ros2gz))
 
         sl.create_gz_bridge(bridges)
 
         if sl.arg('sliders'):
-            # TODO create .yaml file for each thruster config
             sl.node('slider_publisher', arguments=[sl.find('amarsmer_description', thr +'.yaml')])
     
     return sl.launch_description()

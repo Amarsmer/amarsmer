@@ -6,65 +6,45 @@ from rclpy.qos import QoSDurabilityPolicy
 import rclpy
 
 # Common python libraries
-import time
 import numpy as np
-from datetime import datetime
-import os
 from ament_index_python.packages import get_package_share_directory
 
 # ROS2 msg libraries
-from std_msgs.msg import String, Float32, Float32MultiArray
-from nav_msgs.msg import Odometry, Path
-from geometry_msgs.msg import PoseStamped, Pose, Twist, Point, Quaternion, Vector3
-from visualization_msgs.msg import Marker
+from std_msgs.msg import String, Float32MultiArray
+from nav_msgs.msg import Path
+from geometry_msgs.msg import Pose
 
 # Custom libraries
-from amarsmer_control import ROV
 import custom_functions as cf
-from amarsmer_interfaces.srv import RequestPath
+from amarsmer_interfaces.msg import InCtrl
 
 # Training specific custom librairies
 from backprop import NN
 from online_training import PyTorchOnlineTrainer
 
 # Training specific librairies
-import torch
 import json
 import threading
-import atexit
 
 class Controller(Node):
     def __init__(self):
 
         super().__init__('ai_control', namespace='amarsmer')
 
-        # self.declare_parameter('name', 'data')
         self.declare_parameter('network_name', '')       # Will load a saved network file if specified, otherwise will initialize one
         self.declare_parameter('train', True)            # Wether network are updated, 'False' implies testing
         self.declare_parameter('automate', True)         # Test automation will change the robot's pose if some loss requirements are met
         self.input_string = ['','']                      # Meant to be used as ['instruction', 'argument']
-
-        self.rov = ROV(self, thrust_visual = True)
+        self.declare_parameter('dt', 0.05)
 
         #################################### ROS2 Communication ####################################
 
-        self.odom_subscriber = self.create_subscription(Odometry, '/amarsmer/odom', self.odom_callback, 10)
-        self.str_input_subscriber = self.create_subscription(String, '/amarsmer/input_str', self.str_input_callback, 10) # Used to interact with the training process
-        self.pose_arrow_publisher = self.create_publisher(Marker, "/pose_arrow", 10)
-
-        self.data_publisher = self.create_publisher(Float32MultiArray, "/monitoring_data", 10)
-        self.network_publisher = self.create_publisher(Float32MultiArray, "/network_data", 10)
+        self.aiData_publisher = self.create_publisher(Float32MultiArray, "/amarsmer/aiData",10)
+        self.thruster_input_publisher = self.create_publisher(Float32MultiArray, "/thruster_input",10)
+        self.InCtrl_subscriber = self.create_subscription(InCtrl, '/amarsmer/InCtrl', self.ctrl_callback, 10)
         
-        self.dt = 0.01 # Used both for run and pose computation
+        self.dt = self.get_parameter('dt').get_parameter_value().double_value # Used both for run and pose computation
         self.timer = self.create_timer(self.dt, self.run)
-
-        self.future = None # Used for client requests
-
-        # Create a client for path request
-        self.client = self.create_client(RequestPath, '/path_request')
-
-        while not self.client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Waiting for service...")
 
         """
         ################# Reference weighting matrices meant to be equivalent to MPC
@@ -85,6 +65,7 @@ class Controller(Node):
         
         #################################### Initiating variables ####################################
 
+        self.state = None
         self.ai_path = Path()
         
         # Weighting matrices
@@ -121,8 +102,6 @@ class Controller(Node):
         else:
             # Check if the file exists
             try:
-                # pkg_path = get_package_share_directory('amarsmer_control')
-                # file_path = os.path.join(pkg_path, 'saved_networks', f'{network_name}.json')
                 with open(f'saved_networks/{network_name}.json') as fp:
                     json_obj = json.load(fp)
                 
@@ -162,41 +141,18 @@ class Controller(Node):
 
         self.current_time = self.get_time()
 
-        # Initiate monitoring data, both stored as .npy and published on a topic
-        self.monitoring = []
-        self.monitoring.append(['t','x','y','psi','x_d','y_d','psi_d','u1','u2', 'grad1', 'grad2', 'loss_X', 'loss_u']) # Naming the variables in the first row, useful as is and even more so if data points change between version
-
-        self.date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
-
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
         return s + ns*1e-9
 
-    def odom_callback(self, msg: Odometry):
-        pose, twist = cf.odometry(msg)
-
-        self.rov.current_pose = pose
-        self.rov.current_twist = twist
+    def ctrl_callback(self, msg):
+        self.state = np.array(msg.state.data).reshape(-1, 1)
+        self.ai_path = msg.path
     
     def str_input_callback(self, msg: String):
         self.input_string = msg.data.split()
 
-    def updateRobotState(self):
-        # Extract position and speed as column vectors
-        position = np.array([self.rov.current_pose[x] for x in [0, 1, 5]]).reshape(-1, 1)
-        speed = np.array([self.rov.current_twist[x] for x in [0, 1, 5]]).reshape(-1, 1)
-
-        # Concatenate vertically (stack columns)
-        self.state = np.vstack([position, speed])
-
-        self.trainer.updateState(self.state)
-
     def run(self):
-        #################################### Wait for the robot model to be initialized ####################################
-
-        if not self.rov.ready():
-            return
-
         # Update time
         self.current_time = self.get_time()
 
@@ -208,14 +164,13 @@ class Controller(Node):
             self.t0 = self.get_time() # Initial time for data collection
                     
             # Initialize trainer
-            self.trainer = PyTorchOnlineTrainer(self.rov, self.network, self.learning_rate, self.Q_weight, self.R_weight)
+            self.trainer = PyTorchOnlineTrainer(self.network, self.learning_rate, self.Q_weight, self.R_weight)
 
             train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
 
             # Main training
             self.target = [0.,0.,0.,0.,0.,0.] # Default initial target
 
-            self.updateRobotState() # The trainer thread requires manual update of the robot's pose and twist
             self.trainer.updateTarget(self.target) # To be used for trajectory tracking
 
             self.get_logger().info(f"\n Starting training session")
@@ -224,40 +179,12 @@ class Controller(Node):
             self.trainer.running = True
             self.training_thread.start()
 
-        #################################### Request Path ####################################
-
-        # Check if previous future is still pending
-        if self.future is not None:
-            if self.future.done():
-                try:
-                    result = self.future.result()
-                    if result is not None:
-                        self.ai_path = result.path
-                        # self.get_logger().info(f"Received path with {len(self.mpc_path.poses)} poses.")
-                    else:
-                        self.get_logger().error("Service returned None.")
-                except Exception as e:
-                    self.get_logger().error(f"Service call raised exception: {e}")
-                finally:
-                    self.future = None
-                return
-
-        # Send new request
-        request = RequestPath.Request()
-        request.path_request.data = np.linspace(self.current_time, self.current_time + self.dt, 2, dtype=float)
-
-        self.future = self.client.call_async(request)
-
-        if self.ai_path.poses: # Make sure the path is not empty
+        if self.ai_path.poses and self.state is not None: # Make sure the path is not empty
 
             self.target = cf.compute_target(self.ai_path, self.dt)
             self.trainer.updateTarget(self.target)
 
-            # Display target in gazebo
-            target_pose = cf.make_pose(self.target)
-            cf.create_pose_marker(target_pose, self.pose_arrow_publisher)
-
-        self.updateRobotState()
+            self.trainer.updateState(self.state)
 
         #################################### Training automation ####################################
 
@@ -280,49 +207,34 @@ class Controller(Node):
 
             self.previous_loss = self.trainer.loss
 
-        #################################### Save and publish data for monitoring ####################################
+        #################################### Update robot control and publish it to main control node ####################################
+        self.u = self.trainer.u.ravel()
 
-        if self.trainer.trainer_set: # Make sure the training has started
-            x_m = self.trainer.state[0][0]
-            y_m = self.trainer.state[1][0]
-            psi_m = self.trainer.state[2][0]
+        publisher_msg = Float32MultiArray()
+        publisher_msg.data = self.u
+        self.thruster_input_publisher.publish(publisher_msg)
 
-            x_d_m = self.trainer.target[0]
-            y_d_m = self.trainer.target[1]
-            psi_d_m = self.trainer.target[2]
+        # 'grad1', 'grad2', 'loss_x', 'loss_u'
 
-            u = self.trainer.u.ravel()
-            grad = self.trainer.gradient_display.ravel()
-            loss = self.trainer.loss_display.ravel()
-            t = self.get_time() - self.t0
+        ## Publish AI specific data
+        if not self.trainer.trainer_set:
+            return
 
-            data_array = [t, x_m, y_m, psi_m, x_d_m, y_d_m , psi_d_m, u[0],u[1], grad[0], grad[1], loss[0], loss[1]]
-            
-            self.monitoring.append(data_array)
+        grad = self.trainer.gradient_display.ravel()
+        loss = self.trainer.loss_display.ravel()
 
-            publisher_msg = Float32MultiArray()
-            publisher_msg.data = data_array
-            self.data_publisher.publish(publisher_msg)
+        AI_data = [*grad,*loss]
 
-            publisher_msg = Float32MultiArray()
-            publisher_msg.data = self.trainer.error_display
-            self.network_publisher.publish(publisher_msg)
-            
-            # Debug info
-            # self.get_logger().info(f"Grad: {self.trainer.gradient_display}") 
-            # self.get_logger().info(f"U: {self.trainer.u}") 
-            # self.get_logger().info(f"Delta_t: {self.trainer.delta_t_display} \n") 
-            # self.get_logger().info(f"\n Internal state: {self.trainer.state}")
-            # self.get_logger().info(f"\n Internal error: {self.trainer.error}") 
-            # self.get_logger().info(f"\n Train state: {self.trainer.state_train_display}")
-            # self.get_logger().info(f"\n Train target: {self.trainer.target}") 
-            # self.get_logger().info(f"\n Train error: {self.trainer.error_display[2]}")
-            # self.get_logger().info(f"\n Network input: {self.trainer.input_display}")
-            # self.get_logger().info(f"\n Target in robot frame: {self.trainer.robot_frame}")
+        publisher_msg = Float32MultiArray()
+        publisher_msg.data = AI_data
+        self.aiData_publisher.publish(publisher_msg)
+
+        # Debug info
+        # self.get_logger().info(f"Grad: {self.trainer.gradient_display}") 
             
         #################################### Stop training and record data ####################################
         
-        if self.input_string[0] == 'stop': # Stop training session from terminal, there is currently no way to restard training
+        if self.input_string[0] == 'stop': # Stop training session from terminal, there is currently no way to restart training
             network_name = self.input_string[1]
             self.input_string = ['','']
             self.trainer.running = False
@@ -335,9 +247,6 @@ class Controller(Node):
                 json.dump(json_obj, fp)
 
             self.get_logger().info("Training stopped")
-
-            title = f'data/AI_data/{self.date}-networkfile_{network_name}-HL_{self.HL_size}-AI_data'
-            np.save(title, self.monitoring)
 
 rclpy.init()
 node = Controller()

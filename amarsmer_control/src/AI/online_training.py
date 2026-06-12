@@ -4,6 +4,7 @@ import time
 import math
 import torch
 import numpy as np
+import custom_functions as cf
 
 def theta_s(x, y): # Angle skew, used to prevent the singularity in x=0
     return math.tanh(5.*x)*math.atan(10.*y)
@@ -25,9 +26,8 @@ def inRobotFrame(robot_coords, target_coords):
     return x[0],y[0],psi[0]
 
 class PyTorchOnlineTrainer:
-    def __init__(self, robot, nn_model, in_learning_rate = 5e-4, in_Q=np.eye(6), in_R=np.eye(3)):
+    def __init__(self, nn_model, in_learning_rate = 5e-4, in_Q=np.eye(6), in_R=np.eye(3)):
 
-        self.robot = robot
         self.network = nn_model
         self.unwrap = False
 
@@ -67,17 +67,20 @@ class PyTorchOnlineTrainer:
                            [self.radius,-self.radius]]) 
 
         # Coefficients for gradient computation (reduces unnecessary temp variable attribution in loop since it's constant)
-        self.m = self.robot.mass
+        # Read YAML file for robot's properties
+        mass, inertia, added_masses, viscous_drag, _ = cf.read_model()
 
-        self.Xudot = self.robot.added_masses[0]
-        self.Yvdot = self.robot.added_masses[1]
-        self.Nrdot = self.robot.added_masses[5]
+        self.m = mass
 
-        self.Xu = self.robot.viscous_drag[0]
-        self.Yv = self.robot.viscous_drag[1]
-        self.Nr = self.robot.viscous_drag[5]
+        self.Xudot = added_masses[0]
+        self.Yvdot = added_masses[1]
+        self.Nrdot = added_masses[5]
 
-        self.Iz = self.robot.inertia[-1]
+        self.Xu = viscous_drag[0]
+        self.Yv = viscous_drag[1]
+        self.Nr = viscous_drag[5]
+
+        self.Iz = inertia[-1]
         
         self.grad_xdk = np.array([[0.                              , 0.                            ],
                                   [0.                              , 0.                            ],
@@ -179,6 +182,9 @@ class PyTorchOnlineTrainer:
     def train(self, target):
         # Training loop
         while self.running:
+            while self.state is None:
+                time.sleep(0.001)
+
             # Get initial time for gradient computation later
             start_time = time.time()
 
@@ -200,10 +206,7 @@ class PyTorchOnlineTrainer:
             u_tensor = input_coefficient * u_tensor
 
             # Apply control input (convert ONLY for the robot)
-            self.u = u_tensor.detach().cpu().numpy().reshape(-1, 1)
-            self.robot.move([self.u[0], self.u[1], 0, 0],
-                            [0 for i in range(1, 5)])
-
+            self.u = u_tensor.detach().cpu().numpy().copy().reshape(-1, 1)
 
             # Compute loss, both for monitoring and later for backpropagation
             crit_x = error.transpose() @ self.Q @ error
@@ -219,13 +222,10 @@ class PyTorchOnlineTrainer:
 
                 # Manual gradient computation
                 grad = self.computeGradient(delta_t, error)
-                self.gradient_display = grad
+                self.gradient_display = grad.copy()
                 
                 # Convert to tensor grad
                 grad_tensor = torch.tensor(grad, dtype=torch.float32)
-
-                # Normalize magnitude, preserve direction
-                # grad_tensor = grad_tensor / (grad_tensor.norm() + 1e-6)
 
                 # Backprop using external gradient
                 self.optimizer.zero_grad()
@@ -236,14 +236,9 @@ class PyTorchOnlineTrainer:
             self.previous_state = self.state
 
             # Monitoring data for debugging purposes
-            self.state_train_display = self.state
-            self.error_display = error
-            self.input_display = network_input
+            self.state_train_display = self.state.copy()
+            self.error_display = error.copy()
+            self.input_display = network_input.copy()
 
             if not self.trainer_set: # Used for data recording purposes
                 self.trainer_set = True
-
-        # Stop the robot after learning
-        self.robot.move([0,0,0,0],
-                      [0 for i in range(1,5)])
-        # self.running = False

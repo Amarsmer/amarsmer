@@ -7,7 +7,7 @@ def generate_launch_description():
     sl.declare_arg('gui', default_value=True)
     sl.declare_arg('spawn', default_value=True)
     sl.declare_arg('thr',default_value = 'thrusters_plasmar2')
-    sl.declare_arg('spawn_pose', default_value = "0.0 0.0 0.0 0.0 0.0 0.0")
+    sl.declare_arg('nb_thr',4)
 
     with sl.group(if_arg='gui'):
         sl.gz_launch(sl.find('amarsmer_description', 'world.sdf'), "-r")
@@ -27,5 +27,7 @@ def generate_launch_description():
     """
     with sl.group(if_arg='spawn'):
         sl.include('amarsmer_description', 'upload_rov_launch.py',
-                   launch_arguments={'thr': sl.arg('thr'), 'spawn_pose': sl.arg('spawn_pose')})
+                   launch_arguments={'thr': sl.arg('thr'), 
+                                     'nb_thr' : sl.arg('nb_thr')})
+
     return sl.launch_description()

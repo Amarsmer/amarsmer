@@ -23,7 +23,7 @@ The current recommended ROS2 version is Jazzy. All the related info can be found
 ## For the control part
 
 - [slider_publisher](https://github.com/oKermorgant/slider_publisher), installable through `apt install ros-${ROS_DISTRO}-slider-publisher`
-- [auv_control](https://github.com/CentraleNantesROV/auv_control) for basic control laws
+- ~~[auv_control](https://github.com/CentraleNantesROV/auv_control) for basic control laws~~
 - [urdf_parser](https://github.com/ros/urdf_parser_py) intended to have the controller work with any robot description
 
 # Installation
@@ -53,34 +53,54 @@ Gazebo will:
 - NOT YET IMPLEMENTED: ~~Publish sensor data to various topics (image, mpu+lsm for IMU, cloud for the sonar, odom)~~
 - Publish the ground truth on /amarsmer/pose_gt. This pose is forwarded to /tf if pose_to_tf is used.
 
-# High-level control
+# High-level control (simulation)
+The simulation is ran through the Sim_launch.py file, the controller is then chosen as a parameter.
 
-## PID
-Basic control is available in the [auv_control package](https://github.com/CentraleNantesROV/auv_control)
+## Robot architecture
+Multiple robot architecture are available:
+- 'ur' : two thrusters, able to move in surge and yaw, meant for surface applications
+- 'uvr' : three thrusters, surge sway and yaw, surface applications
+- 'plasmar2' : four reconfigurable thrusters, meant to any applications
 
-The full launch file for cascaded PID control (including world launch) is ran with:
+The architecture is selected with the thrusters parameter, either 'ur', 'uvr', or 'plasmar2'
 
-`ros2 launch amarsmer_control PID_launch.py`
+## Launch parameters
+Some parameters can be set at launch for ease of use.
+
+### General parameters
+- thrusters: select the robot's architecture (either 'uv', 'uvr', or 'plasmar2')
+- spawn_pose: the robot's initial pose in the world frame, written as 'x y z phi theta psi'
+- trajectory: the trajectory to be followed by the controller, the full list is available in the path_generation.py file
+- controller_type: the controller to be used, either 'PID', 'MPC', or 'AI'
+- comment: various data are recorded during the simulation, the comment parameter is added in the file name
+- dt: the time period at which every node is expected to run
+
+### AI specific parameters
+- network name: the name of a saved neural network to be used
+- train: if True, will update the neural network while moving
+- automate: if True, will manually move the robot at different positions when the criteria is low enough for a given time window 
+
+## Controllers
+### PID
+~~Basic control is available in the [auv_control package](https://github.com/CentraleNantesROV/auv_control)~~
+
+The PID controller is ran with:
+
+`ros2 launch amarsmer_control Sim_launch.py controller_type:='PID'` 
 
 The target can be adjusted with sliders (PID currently not compatible with path generation).
 
-## MPC
-The full launch file for MPC control (including world launch) is ran with:
+### MPC
+The MPC controller is ran with:
 
-`ros2 launch amarsmer_control MPC_launch.py`
+`ros2 launch amarsmer_control Sim_launch.py controller_type:='MPC`
 
-As QoL, some parameters can be set from terminal:
-
-`ros2 launch amarsmer_control MPC_launch.py trajectory:='sin' robot_file:=thrusters_plasmar2`
-
-Currently only 'thrusters_plasmar2' and 'thrusters_plasmar_uvr' are available.
-
-## AI
+### AI
 The full launch file for AI training and control (including world launch) is ran with:
 
 `ros2 launch amarsmer_control AI_launch.py`
 
-As QoL, some parameters can be set from terminal:
+Below is a launch example using every parameter:
 
 `ros2 launch amarsmer_control AI_launch.py trajectory:='sin' network_name:='name' train:=True`
 

@@ -1,62 +1,46 @@
 <?xml version="1.0"?>
 
-<xacro>
+<xacro xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-<gazebo>
-    <plugin filename="ignition-gazebo-hydrodynamics-system" name="ignition::gazebo::systems::Hydrodynamics">
+  <!-- Load YAML -->
 
-<!--     <density>${density}</density> -->
-        
-    <!-- Ignition notations from Handbook of Marine Craft, Fossen, 2011 -->
-        
-    <link_name>${ns}/base_link</link_name>
+  <xacro:property name="cfg"
+                value="${xacro.load_yaml('$(find amarsmer_control)/config/robot.yaml')}"/>
 
-        
-    <!-- BlueROV2 heavy values from "6-DoF Modelling and Control of a Remotely Operated Vehicle"
-        Wu, Master thesis, Flinder University, 2018  -->
-    <!-- Negative diagonal values of added mass matrix [Fossen (6.38)] -->
-    <xDotU>-5.5</xDotU>
-    <yDotV>-12.7</yDotV>
-    <zDotW>-14.57</zDotW>
-    <kDotP>-0.12</kDotP>
-    <mDotQ>-0.12</mDotQ>
-    <nDotR>-0.12</nDotR>
-    
-    
-    <!-- From "Numerical Modelling and Experimental Testing of the Hydrodynamic Characteristics 
-        for an Open-Frame Remotely Operated Vehicle",  Li et al, Marine Science and Engineering, 2020         -->        
-    <!-- Negative linear damping [Fossen (6.62)] -->    
-<!--    <xU>-1.31</xU>    
-    <yV>-9.14</yV>
-    <zW>-2.015</zW>
-    <kP>-0.</kP>
-    <mQ>-0.</mQ>
-    <nR>-0.</nR>-->                   
-    <!-- Negative quadratic damping [Fossen (6.62)] -->          
-      <xUabsU>-33.800000000000004</xUabsU>
-      <yVabsV>-54.26875</yVabsV>
-      <zWabsW>-73.37135</zWabsW>
-      <kPabsP>-40.0</kPabsP>
-      <mQabsQ>-40.0</mQabsQ>
-      <nRabsR>-40.0</nRabsR>
-        
-    <!-- BlueROV2 values from "Model Predictive Control for the BlueROV2", 
-        Emil Már Einarsson, Andris Lipenitis, Master thesis, 2020  -->        
-    <!-- Negative linear damping -->    
-    <xU>-25.15</xU>
-    <yV>-7.364</yV>
-    <zW>-17.955</zW>
-    <kP>-10.888</kP>
-    <mQ>-20.761</mQ>
-    <nR>-3.744</nR>
-                   
-    <!-- Negative quadratic damping -->          
-<!--    <xUU>-17.77</xUU>
-    <yVV>-125.9</yVV>
-    <zWW>-72.36</zWW>
-    <kPP>-0.1246</kPP>
-    <mQQ>-0.1246</mQQ>
-    <nRR>-0.1857</nRR>-->
+<xacro:property name="hydro"
+                value="${cfg['hydrodynamics']}"/>
+
+  <gazebo>
+    <plugin filename="ignition-gazebo-hydrodynamics-system"
+            name="ignition::gazebo::systems::Hydrodynamics">
+
+      <link_name>${ns}/base_link</link_name>
+
+      <!-- Added mass -->
+      <xDotU>${hydro['added_mass']['xDotU']}</xDotU>
+      <yDotV>${hydro['added_mass']['yDotV']}</yDotV>
+      <zDotW>${hydro['added_mass']['zDotW']}</zDotW>
+      <kDotP>${hydro['added_mass']['kDotP']}</kDotP>
+      <mDotQ>${hydro['added_mass']['mDotQ']}</mDotQ>
+      <nDotR>${hydro['added_mass']['nDotR']}</nDotR>
+
+      <!-- Quadratic damping -->
+      <xUabsU>${hydro['quadratic_damping']['xUabsU']}</xUabsU>
+      <yVabsV>${hydro['quadratic_damping']['yVabsV']}</yVabsV>
+      <zWabsW>${hydro['quadratic_damping']['zWabsW']}</zWabsW>
+      <kPabsP>${hydro['quadratic_damping']['kPabsP']}</kPabsP>
+      <mQabsQ>${hydro['quadratic_damping']['mQabsQ']}</mQabsQ>
+      <nRabsR>${hydro['quadratic_damping']['nRabsR']}</nRabsR>
+
+      <!-- Linear damping -->
+      <xU>${hydro['linear_damping']['xU']}</xU>
+      <yV>${hydro['linear_damping']['yV']}</yV>
+      <zW>${hydro['linear_damping']['zW']}</zW>
+      <kP>${hydro['linear_damping']['kP']}</kP>
+      <mQ>${hydro['linear_damping']['mQ']}</mQ>
+      <nR>${hydro['linear_damping']['nR']}</nR>
+
     </plugin>
-</gazebo>
+  </gazebo>
+
 </xacro>
