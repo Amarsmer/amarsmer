@@ -59,6 +59,9 @@ class Controller(Node):
         self.controller = None #Updated at the start of spin
         self.state = None
 
+        self.loss = []
+        self.loss.append(['t','loss'])
+
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
         return s + ns*1e-9
@@ -92,10 +95,17 @@ class Controller(Node):
             return
 
         # MPC control
-        u = np.zeros(self.nb_thrusters)
+        u = np.zeros(self.nb_thrusters).reshape(-1,1)
 
         if self.mpc_path.poses: # Make sure the path is not empty
             u = self.controller.solve(path=self.mpc_path, x_current=self.state)
+
+        crit_x = self.state.transpose() @ self.Q_weight @ self.state
+        crit_u = u.transpose() @ self.R_weight @ u
+        loss = crit_x + crit_u
+        self.loss.append([self.get_time(), loss])
+
+        np.save('MPC_loss', self.loss)
 
         # self.get_logger().info(f'\nState: {self.state}\n\nPath*: {self.mpc_path.poses[0]} \n\nU: {u}')
         status = self.controller.error_msg

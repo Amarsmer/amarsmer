@@ -4,6 +4,7 @@ import time
 import math
 import torch
 import numpy as np
+import sympy as sp
 import custom_functions as cf
 
 def theta_s(x, y): # Angle skew, used to prevent the singularity in x=0
@@ -58,36 +59,22 @@ class PyTorchOnlineTrainer:
         self.robot_frame = [0,0,0]
 
         ## Modeling
-        # Compute B matrix (constant)
-        self.radius = 0.15 # radius of the robot
+        # B matrix, NED not yet implemented, so the last row is reversed
+        R = sp.Symbol('R')
 
-        # NED not yet implemented, so the last row is reversed
-        self.B = np.array([[1.        ,1.],
-                           [0.        ,0.],
-                           [self.radius,-self.radius]]) 
+        B = sp.Matrix([[1, 1],
+                       [0, 0],
+                       [R,-R]])
 
         # Coefficients for gradient computation (reduces unnecessary temp variable attribution in loop since it's constant)
         # Read YAML file for robot's properties
         mass, inertia, added_masses, viscous_drag, _ = cf.read_model()
 
-        self.m = mass
-
-        self.Xudot = added_masses[0]
-        self.Yvdot = added_masses[1]
-        self.Nrdot = added_masses[5]
-
-        self.Xu = viscous_drag[0]
-        self.Yv = viscous_drag[1]
-        self.Nr = viscous_drag[5]
-
-        self.Iz = inertia[-1]
+        radius = 0.15
+        planar_added_mass = [added_masses[i] for i in [0,1,5]]
+        planar_dampening = [viscous_drag[i] for i in [0,1,5]]
         
-        self.grad_xdk = np.array([[0.                              , 0.                            ],
-                                  [0.                              , 0.                            ],
-                                  [0.                              , 0.                            ],
-                                  [1/(self.m - self.Xudot)         , 1/(self.m - self.Xudot)       ],
-                                  [0.                              , 0.                            ],
-                                  [self.radius/(self.Iz - self.Nrdot)   , -self.radius/(self.Iz - self.Nrdot)]])
+        self.compute_gradient,_,_,_ = cf.build_grad(B, mass, planar_added_mass, inertia[-1], planar_dampening, radius, in_Q, in_R)
 
         self.trainer_set = False # Make sure inputs have been computed before recording data
 
@@ -100,13 +87,15 @@ class PyTorchOnlineTrainer:
         self.state_display = None
         self.loss_display = np.zeros(2)
 
+        self.target_display = None
+
     def updateTarget(self, in_target):
         temp_target = in_target
 
         if self.unwrap and self.previous_target is not None:
             temp_target[2] = np.unwrap([self.previous_target[2],temp_target[2]])[-1]
 
-        self.target = temp_target
+        self.target = np.array(temp_target).reshape(-1, 1)
 
     def updateState(self, in_state):
         temp_state = in_state
@@ -118,66 +107,35 @@ class PyTorchOnlineTrainer:
 
     def computeError(self):
         # Compute error as a column vector
-        error = self.state - np.array(self.target).reshape(-1, 1)
+        self.state_display = self.state.copy()
+        self.target_display = self.target.copy()
+
+        error = self.state - self.target
 
         self.robot_frame = inRobotFrame(self.state, self.target)
+        error[:3] = np.array(self.robot_frame).reshape(-1, 1)
+
+        # skew = theta_s(self.state[0], self.state[1])
+        angle = error[2]
+        skew = np.arctan(error[1],error[0])
+        d = np.hypot(error[1],error[0])
+        e = np.exp(-2*d)
+        # error[2] -= skew # Yaw skew
+        error[2] = e * angle + (1-e) * skew
 
         # Apply angle disambiguation
-        error[2] = 2*np.sin(wrap_angle(error[2])/2)
-
-        skew = theta_s(self.state[0], self.state[1])
-        # error[2] -= skew # Yaw skew
-
-        self.skew = skew # Monitoring
+        # error[2] = 2*np.sin(wrap_angle(error[2])/2)
+        
+        # self.skew = skew # Monitoring
         
         return error
 
     def computeNetworkInput(self, error):
         # Weight matrix used for input normalization
-        weight_matrix = np.diag([1/10, 1/10, 1/np.pi, 1/5, 1/5, 1/np.pi])
+        weight_matrix = np.diag([1/10, 1/10, 1/(2*np.pi), 1, 1, 1/(2*np.pi)])
         network_input = weight_matrix @ error
         
         return network_input.ravel()
-
-    def computeGradient(self, delta_t, error, alpha1 = 1, alpha2 = 1000):
-        x,y,psi,u,v,r = self.state.ravel()
-
-        gradxJ = 2 * (self.Q @ error)
-        graduJ = 2 * (self.R @ self.u)
-
-        fod_grad = self.grad_xdk # first order derivative gradient
-
-        # second order derivative gradient, done in multiple steps to increase readability and ease of debugging
-        cos = np.cos
-        sin = np.sin
-
-        fracmXu = self.m + self.Xudot
-        fracmYv = self.m + self.Yvdot
-        fracIzNr = self.Iz + self.Nrdot
-
-        grad3_A = self.radius*v*(self.m - self.Yvdot)/fracIzNr # each "A" element is dependent on the radius and may need a change of sign when NED is implemented
-        grad3_B = self.Xu/fracmXu
-
-        grad4_A = u*r/fracIzNr
-        grad4_B = r/fracmXu
-
-        grad5_A = (self.radius*self.Nr)/fracIzNr
-        grad5_B = v*(self.Yvdot-self.Xudot)/fracmXu
-
-        sod_grad = np.array([[cos(psi)/fracmXu                                 , cos(psi)/fracmXu                                  ],
-                            [sin(psi)/fracmXu                                  , sin(psi)/fracmXu                                  ],
-                            [self.radius/fracIzNr                              , -self.radius/fracIzNr                             ],
-                            [(-grad3_A + grad3_B)/fracmXu                      , (grad3_A + grad3_B)/fracmXu                       ],
-                            [(-grad4_A + grad4_B)*(self.Xudot - self.m)/fracmYv, (grad4_A + grad4_B)*(self.Xudot - self.m)/fracmYv ],
-                            [(-grad5_A + grad5_B)/fracIzNr                     , (grad5_A + grad5_B)/fracIzNr                      ]]) 
-
-        # cost function gradient
-        time_gradient = alpha1 * delta_t * fod_grad + alpha2 * 0.5*delta_t**2 * sod_grad
-
-        grad = (time_gradient.transpose() @ gradxJ) + graduJ
-        grad = grad.squeeze(-1) # Removes the dimensions of size 1
-
-        return grad
 
     def train(self, target):
         # Training loop
@@ -189,6 +147,7 @@ class PyTorchOnlineTrainer:
             start_time = time.time()
 
             error = self.computeError()
+            self.error_display = error.copy()
             network_input = self.computeNetworkInput(error)
             
             # Prepare input
@@ -221,11 +180,12 @@ class PyTorchOnlineTrainer:
                 self.delta_t_display = delta_t
 
                 # Manual gradient computation
-                grad = self.computeGradient(delta_t, error)
-                self.gradient_display = grad.copy()
+                grad = self.compute_gradient(self.state, error, self.u, delta_t, 1, 1000).squeeze()
                 
                 # Convert to tensor grad
                 grad_tensor = torch.tensor(grad, dtype=torch.float32)
+
+                self.gradient_display = grad.copy()
 
                 # Backprop using external gradient
                 self.optimizer.zero_grad()

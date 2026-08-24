@@ -69,7 +69,7 @@ class Controller(Node):
         self.ai_path = Path()
         
         # Weighting matrices
-        self.Q_weight = np.diag([50, # x
+        self.Q_weight = np.diag([20, # x
                                  50, # y 
                                  10, # psi
                                  1, # u
@@ -77,15 +77,15 @@ class Controller(Node):
                                  1  # r
                                  ])
         
-        self.R_weight = np.diag([1e-5, # u1
-                                 1e-5  # u2
+        self.R_weight = np.diag([1e-6, # u1
+                                 1e-6  # u2
                                  ])
         # TODO The difference of R weight between AI and MPC may come from delta_t applied to the gradient, further investigation required
 
         ### Create pytorch network
 
         # Network parameters
-        self.HL_size = 40
+        self.HL_size = 200
         input_size = 6 # x, y, psi, u, v, r
         output_size = 2 # u1, u2
         self.learning_rate = 1e-4
@@ -127,7 +127,7 @@ class Controller(Node):
             self.acceptable_loss_delay = 10. # If the loss is below the threshold for this amount of time (s), the robot is moved
             
             # Poses to be parsed 
-            self.pose_index = 0
+            self.pose_index = -1
             self.initial_poses = [np.array([4., 4., 0., 0., 0., 1.]),
                                 np.array([-4., -4., 0., 0., 0., 4.]),
                                 np.array([4., -4., 0., 0., 0., 1.]),
@@ -214,8 +214,6 @@ class Controller(Node):
         publisher_msg.data = self.u
         self.thruster_input_publisher.publish(publisher_msg)
 
-        # 'grad1', 'grad2', 'loss_x', 'loss_u'
-
         ## Publish AI specific data
         if not self.trainer.trainer_set:
             return
@@ -230,7 +228,12 @@ class Controller(Node):
         self.aiData_publisher.publish(publisher_msg)
 
         # Debug info
-        # self.get_logger().info(f"Grad: {self.trainer.gradient_display}") 
+        # self.get_logger().info(f"Grad: {self.trainer.gradient_display}")
+        self.get_logger().info(f"Rboot frame: {self.trainer.robot_frame}")
+        # if self.trainer.error_display is not None:
+        #     self.get_logger().info(f"State: \n{self.trainer.state_display}")
+        #     self.get_logger().info(f"Target: \n{self.trainer.target_display}")        
+        #     self.get_logger().info(f"Error: \n{self.trainer.error_display}")    
             
         #################################### Stop training and record data ####################################
         

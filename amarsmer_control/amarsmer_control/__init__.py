@@ -268,7 +268,8 @@ class ROV:
         # joint states
         self.qs = [ca.SX.sym(name) for name in self.joints]
         # thruster allocation matrix
-        self.TAM = sp.lambdify([q[name] for name in self.joints], T)(*self.qs)
+        # self.TAM = sp.lambdify([q[name] for name in self.joints], T)(*self.qs)
+        self.TAM = sp.lambdify([q[name] for name in self.joints], T, modules='numpy')
 
         # print(self.TAM)
 

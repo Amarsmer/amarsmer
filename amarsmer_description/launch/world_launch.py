@@ -20,11 +20,7 @@ def generate_launch_description():
                             GazeboBridge.ros2gz)]
         
     sl.create_gz_bridge(bridges)
-    """
-    with sl.group(if_arg='spawn'):
-        sl.include('amarsmer_description', 'upload_rov_launch.py',
-                   launch_arguments=sl.arg_map('thr'))
-    """
+    
     with sl.group(if_arg='spawn'):
         sl.include('amarsmer_description', 'upload_rov_launch.py',
                    launch_arguments={'thr': sl.arg('thr'), 
