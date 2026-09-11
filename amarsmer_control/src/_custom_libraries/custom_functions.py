@@ -63,171 +63,192 @@ def read_model():
 #################### Gradient computation ####################
 
 def build_grad(B, mass, added_mass, inertia, dampening, radius, Qw, Rw):
-    
+
     ########## Variable init ########
-    
+
     cos = sp.cos
     sin = sp.sin
-    
-    #### Time
+
+    # Time
     t = sp.Symbol('t')
 
-    ####State space
-    # Position
+    # State variables
     x = sp.Function('x')(t)
     y = sp.Function('y')(t)
     psi = sp.Function('psi')(t)
 
-    # position derivatives
-    x_dot,y_dot,psi_dot = sp.symbols('x_dot y_dot psi_dot')
+    # Position derivatives
+    x_dot, y_dot, psi_dot = sp.symbols('x_dot y_dot psi_dot')
 
     # Speeds
     u = sp.Function('u')(t)
     v = sp.Function('v')(t)
     r = sp.Function('r')(t)
 
-    # accelerations
-    u_dot,v_dot,r_dot = sp.symbols('u_dot v_dot r_dot')
+    # Accelerations
+    u_dot, v_dot, r_dot = sp.symbols('u_dot v_dot r_dot')
 
-    #### Dynamic Model
-    
+    # Dynamic parameters
     m = sp.Symbol('m')
 
-    # M matrix
     Xu_dot, Yv_dot, Nr_dot, Iz = sp.symbols('Xu_dot Yv_dot Nr_dot Iz')
 
-    # D matrix
     Xu, Yv, Nr = sp.symbols('Xu Yv Nr')
-    
-    # Control inputs
+
+    # Control input / thruster geometry parameter
     R = sp.Symbol('R')
-    
+
+    # Control inputs
     nb_thr = B.shape[1]
-    
+
     U = sp.Matrix(
-        sp.symbols(f'U1:{nb_thr+1}')
+        sp.symbols(f'U1:{nb_thr + 1}')
     )
-    
+
     ########## Model ##########
-    
-    # Kinematic
-    eta = sp.Matrix([[x],
-                     [y],
-                     [psi]])
-    
-    nu = sp.Matrix([[u],
-                    [v],
-                    [r]])
-    
+
+    # Kinematic model
+    eta = sp.Matrix([x,
+                     y,
+                     psi])
+
+    nu = sp.Matrix([u,
+                    v,
+                    r])
+
     J = sp.Matrix([[cos(psi), -sin(psi), 0],
                    [sin(psi),  cos(psi), 0],
-                   [   0    ,     0    , 1]])
+                   [0,         0,        1]])
 
-    eta_dot = J*nu
-    
+    eta_dot = J * nu
+
     x_dot, y_dot, psi_dot = eta_dot
-    
-    # Dynamic
-    M = sp.Matrix([[m-Xu_dot, 0, 0],
-                   [0, m-Yv_dot, 0],
-                   [0, 0, Iz-Nr_dot]])
-    
-    C = sp.Matrix([[0, -m*r, Yv_dot*v],
-                   [m*r, 0, -Xu_dot*u],
-                   [-Yv_dot*v, Xu_dot*u, 0]])
-    
-    D = -sp.Matrix([[Xu, 0, 0],
-                   [0, Yv, 0],
-                   [0, 0, Nr]])
-    
-    Tau = B*U
 
-    nu_dot = M.inv() * (Tau - C*nu - D*nu)
-    
+    # Dynamic model
+    M = sp.Matrix([[m - Xu_dot, 0,          0],
+                   [0,          m - Yv_dot, 0],
+                   [0,          0,          Iz - Nr_dot]])
+
+    C = sp.Matrix([[0,       -m*r,        Yv_dot*v],
+                   [m*r,      0,          -Xu_dot*u],
+                   [-Yv_dot*v, Xu_dot*u,  0]])
+
+    D = -sp.Matrix([[Xu, 0,  0],
+                    [0,  Yv, 0],
+                    [0,  0,  Nr]])
+
+    Tau = B * U
+
+    nu_dot = M.inv() * (Tau - C * nu - D * nu)
+
     u_dot, v_dot, r_dot = nu_dot
-    
-    # State space
-    X = sp.Matrix([[x],
-                   [y],
-                   [psi],
-                   [u],
-                   [v],
-                   [r]])
-    
-    X_dot = sp.Matrix([[x_dot],
-                       [y_dot],
-                       [psi_dot],
-                       [u_dot],
-                       [v_dot],
-                       [r_dot]])
-    
-    # Differentiate
-    X_ddot = sp.diff(X_dot, t)
-    X_ddot = X_ddot.subs({
-        sp.diff(x,t) : x_dot,
-        sp.diff(y,t) : y_dot,
-        sp.diff(psi,t) : psi_dot,
-        sp.diff(u,t) : u_dot,
-        sp.diff(v,t) : v_dot,
-        sp.diff(r,t) : r_dot
-        })
-    
+
+    ########## Physical state ##########
+
+    X = sp.Matrix([x,
+                   y,
+                   psi,
+                   u,
+                   v,
+                   r])
+
+    X_dot = sp.Matrix([x_dot,
+                       y_dot,
+                       psi_dot,
+                       u_dot,
+                       v_dot,
+                       r_dot])
+
+    ########## Cost state ##########
+
+    # psi itself is retained in the physical state, but the cost
+    # representation uses cos(psi) and sin(psi).
+
+    X_cost = sp.Matrix([x,
+                        y,
+                        cos(psi),
+                        sin(psi),
+                        u,
+                        v,
+                        r])
+
+    # Time derivative of the cost state
+    X_cost_dot = sp.Matrix([x_dot,
+                            y_dot,
+                            -sin(psi) * psi_dot,
+                            cos(psi) * psi_dot,
+                            u_dot,
+                            v_dot,
+                            r_dot])
+
+    ########## Second derivative ##########
+
+    X_cost_ddot = sp.diff(X_cost_dot, t)
+
+    X_cost_ddot = X_cost_ddot.subs({sp.diff(x, t): x_dot,
+                                    sp.diff(y, t): y_dot,
+                                    sp.diff(psi, t): psi_dot,
+                                    sp.diff(u, t): u_dot,
+                                    sp.diff(v, t): v_dot,
+                                    sp.diff(r, t): r_dot})
+
+    ########## Target ##########
+
+    x_d, y_d, psi_d, u_d, v_d, r_d = sp.symbols('x_d y_d psi_d u_d v_d r_d')
+
+    T_cost = sp.Matrix([x_d,
+                        y_d,
+                        cos(psi_d),
+                        sin(psi_d),
+                        u_d,
+                        v_d,
+                        r_d])
+
     ########## Gradient computation ##########
-    
-    # Target
-    # x_d,y_d,psi_d, u_d, v_d, r_d = sp.symbols('x_d y_d psi_d u_d v_d r_d')
-    # T = sp.Matrix([[x_d],
-    #                [y_d],
-    #                [psi_d],
-    #                [u_d],
-    #                [v_d],
-    #                [r_d]])
 
-    e_x, e_y, e_psi, e_u, e_v, e_r = sp.symbols('e_x e_y e_psi e_u e_v e_r')
-    E = sp.Matrix([[e_x],
-                   [e_y],
-                   [e_psi],
-                   [e_u],
-                   [e_v],
-                   [e_r]])
+    # First-order state/control gradient
+    grad_U = sp.Matrix.hstack(*(sp.diff(X_cost_dot, control) for control in U))
 
-    # First order gradient
-    grad_U = sp.Matrix.hstack(*(sp.diff(X_dot, u) for u in U))
+    # Second-order state/control gradient
+    gradd_U = sp.Matrix.hstack(*(sp.diff(X_cost_ddot, control) for control in U))
 
-    # Second order gradient
-    gradd_U = sp.Matrix.hstack(*(sp.diff(X_ddot, u) for u in U))
-    
-    # Create gradient function
+    # Cost parameters
     dt, alpha1, alpha2 = sp.symbols('dt alpha1 alpha2')
-    
-    gradxJ = 2 * (Qw * E)
+
+    # State cost gradient
+    gradxJ = 2 * (Qw * (X_cost - T_cost))
+
+    # Control cost gradient
     graduJ = 2 * (Rw * U)
-        
-    time_gradient = alpha1 * dt * grad_U + alpha2 * 0.5*dt**2 * gradd_U
-    
-    full_gradient = time_gradient.T *gradxJ + graduJ
-    
+
+    # Time-dependent gradient
+    time_gradient = alpha1 * dt * grad_U + alpha2 * 0.5 * dt**2 * gradd_U
+
+    # Complete gradient
+    full_gradient = time_gradient.T * gradxJ + graduJ
+
     # Copy full symbolic expression for supervision purposes
     symb_Ud = grad_U.copy()
     symb_Udd = gradd_U.copy()
     symb_full = full_gradient.copy()
-    
+
     # Substitute parameters with given values
-    added_mass_symbols = (Xu_dot, Yv_dot, Nr_dot)
-    damping_symbols = (Xu, Yv, Nr)
-    
+    added_mass_symbols = (Xu_dot,Yv_dot,Nr_dot)
+    damping_symbols = (Xu,Yv,Nr)
+
     subs = {}
     subs.update({m: mass})
-    subs.update(zip(added_mass_symbols, added_mass))
+    subs.update(zip(added_mass_symbols,added_mass))
     subs.update({Iz: inertia})
-    subs.update(zip(damping_symbols, dampening))
+    subs.update(zip(damping_symbols,dampening))
     subs.update({R: radius})
-    
+
+    # Lambdify
     f_num = full_gradient.subs(subs)
-    f = sp.lambdify([X,E,U,dt,alpha1,alpha2], f_num, modules='numpy')
-    
+    f = sp.lambdify([X, T_cost, U, dt, alpha1, alpha2],f_num,modules='numpy')
+
     return f, symb_full, symb_Ud, symb_Udd
-    
+
 #################### Gazebo interaction ####################
 def pause_gz(pause):
     os.system(f'gz service -s /world/ocean/control --reqtype gz.msgs.WorldControl --reptype gz.msgs.Boolean --req \'pause: {pause}\' --timeout 1000')
@@ -391,7 +412,7 @@ def create_pose_marker(inPose, inPub):
 
     inPub.publish(marker)
 
-def compute_target(path, dt):
+def compute_target(path, dt, sc = False):
 
         def get_yaw_from_quaternion(q):
             siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
@@ -424,7 +445,10 @@ def compute_target(path, dt):
         dpsi = (psi - psi_prev + np.pi) % (2 * np.pi) - np.pi
         r = dpsi / dt
         
-        return [x, y, psi, u, v, r]
+        if sc:
+            return [x, y, np.cos(psi), np.sin(psi), u, v, r]
+        else:
+            return [x, y, psi, u, v, r]
 
 
 #################### Trajectory generation ####################

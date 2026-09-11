@@ -7,24 +7,26 @@ import numpy as np
 import sympy as sp
 import custom_functions as cf
 
-def theta_s(x, y): # Angle skew, used to prevent the singularity in x=0
-    return math.tanh(5.*x)*math.atan(10.*y)
-
 def wrap_angle(angle):
     return (angle + np.pi) % (2 * np.pi) - np.pi
 
 def inRobotFrame(robot_coords, target_coords):
     x_r,y_r,psi_r,_,_,_ = robot_coords
-    x_t,y_t,psi_t,_,_,_ = target_coords
+    x_t,y_t,cpsi_t,spsi_t,_,_,_ = target_coords
 
-    cos = np.cos
-    sin = np.sin
+    cpsi_r = np.cos(psi_r)
+    spsi_r = np.sin(psi_r)
 
-    x = (x_t - x_r)*cos(psi_r) + (y_t - y_r)*sin(psi_r)
-    y = (y_t - y_r)*cos(psi_r) - (x_t - x_r)*sin(psi_r)
-    psi = wrap_angle(psi_t) - wrap_angle(psi_r)
+    psi_r = np.arctan2(spsi_r,cpsi_r)
+    psi_t = np.arctan2(spsi_t,cpsi_t)
 
-    return x[0],y[0],psi[0]
+    x = (x_t - x_r)*cpsi_r + (y_t - y_r)*spsi_r
+    y = (y_t - y_r)*cpsi_r - (x_t - x_r)*spsi_r
+    # psi = wrap_angle(psi_t) - wrap_angle(psi_r)
+    cpsi = cpsi_t - cpsi_r
+    spsi = spsi_t - spsi_r
+
+    return x[0],y[0],cpsi[0],spsi[0]
 
 class PyTorchOnlineTrainer:
     def __init__(self, nn_model, in_learning_rate = 5e-4, in_Q=np.eye(6), in_R=np.eye(3)):
@@ -56,7 +58,7 @@ class PyTorchOnlineTrainer:
         self.previous_state = None
         self.previous_target = None
 
-        self.robot_frame = [0,0,0]
+        self.robot_frame = [0,0,0,0]
 
         ## Modeling
         # B matrix, NED not yet implemented, so the last row is reversed
@@ -106,33 +108,57 @@ class PyTorchOnlineTrainer:
         self.state = temp_state
 
     def computeError(self):
+
+        def theta_s(x, y): # Angle skew, used to prevent the singularity in x=0
+            return math.tanh(5.*x)*math.atan(10.*y)
+
+        def sigmoid(z):
+            return 1/(1 + np.exp(-z))
+
         # Compute error as a column vector
         self.state_display = self.state.copy()
         self.target_display = self.target.copy()
 
-        error = self.state - self.target
-
         self.robot_frame = inRobotFrame(self.state, self.target)
-        error[:3] = np.array(self.robot_frame).reshape(-1, 1)
+        state = self.state.copy().ravel()
+        target = self.target.copy().ravel()
+        dx = state[0] - target[0]
+        dy = state[1] - target[1]
+        skew = np.arctan2(-dy, -dx)
+        # skew = float(np.arctan(state[1]/state[0]))
 
-        # skew = theta_s(self.state[0], self.state[1])
-        angle = error[2]
-        skew = np.arctan(error[1],error[0])
-        d = np.hypot(error[1],error[0])
-        e = np.exp(-2*d)
-        # error[2] -= skew # Yaw skew
-        error[2] = e * angle + (1-e) * skew
+        # skew = -float(np.arctan((target[1]-state[1])/(target[0]-state[0])))
+        self.skew = skew
 
-        # Apply angle disambiguation
-        # error[2] = 2*np.sin(wrap_angle(error[2])/2)
-        
-        # self.skew = skew # Monitoring
-        
-        return error
+        # error = self.state - self.target
+        error = np.array([state[0] - target[0],
+                          state[1] - target[1],
+                          np.cos(state[2]) - np.cos(skew),
+                          np.sin(state[2]) - np.sin(skew),
+                          state[3] - target[3],
+                          state[4] - target[4],
+                          state[5] - target[5],
+                          ]).reshape(-1, 1)
+
+        ### Apply skew angle ###
+        # angle = self.target[2]
+        # heading = np.arctan2(error[1],error[0])
+        # d = np.hypot(error[1],error[0])
+
+        # alpha = 10
+        # beta = 0.5
+        # ea = np.exp(-d**2*alpha)
+        # eb = 1-np.exp(-d**2*beta)
+
+        # skewed_angle = ea*angle + eb*heading
+        # skewed_angle = angle
+
+        return error, skew
 
     def computeNetworkInput(self, error):
         # Weight matrix used for input normalization
-        weight_matrix = np.diag([1/10, 1/10, 1/(2*np.pi), 1, 1, 1/(2*np.pi)])
+        # weight_matrix = np.diag([1/10, 1/10, 1/(2*np.pi), 1, 1, 1/(2*np.pi)])
+        weight_matrix = np.diag([1/5, 1/5, 1, 1, 1, 1, 1/(2*np.pi)])
         network_input = weight_matrix @ error
         
         return network_input.ravel()
@@ -146,7 +172,7 @@ class PyTorchOnlineTrainer:
             # Get initial time for gradient computation later
             start_time = time.time()
 
-            error = self.computeError()
+            error, skew_angle = self.computeError()
             self.error_display = error.copy()
             network_input = self.computeNetworkInput(error)
             
@@ -180,7 +206,11 @@ class PyTorchOnlineTrainer:
                 self.delta_t_display = delta_t
 
                 # Manual gradient computation
-                grad = self.compute_gradient(self.state, error, self.u, delta_t, 1, 1000).squeeze()
+                state = self.state.copy()
+                skew_target = self.target.copy()
+                skew_target[2] = np.cos(skew_angle)
+                skew_target[3] = np.sin(skew_angle)
+                grad = self.compute_gradient(state, skew_target, self.u, delta_t, 1, 1000).squeeze()
                 
                 # Convert to tensor grad
                 grad_tensor = torch.tensor(grad, dtype=torch.float32)
@@ -191,6 +221,9 @@ class PyTorchOnlineTrainer:
                 self.optimizer.zero_grad()
                 u_tensor.backward(gradient=grad_tensor)
                 self.optimizer.step()
+
+            else:
+                self.gradient_display = np.array([0,0])
 
             self.previous_target = self.target
             self.previous_state = self.state

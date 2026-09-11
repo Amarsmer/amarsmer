@@ -41,7 +41,9 @@ class Controller(Node):
 
         self.aiData_publisher = self.create_publisher(Float32MultiArray, "/amarsmer/aiData",10)
         self.thruster_input_publisher = self.create_publisher(Float32MultiArray, "/thruster_input",10)
+
         self.InCtrl_subscriber = self.create_subscription(InCtrl, '/amarsmer/InCtrl', self.ctrl_callback, 10)
+        self.str_subscriber = self.create_subscription(String, '/amarsmer/input_str', self.str_input_callback, 10)
         
         self.dt = self.get_parameter('dt').get_parameter_value().double_value # Used both for run and pose computation
         self.timer = self.create_timer(self.dt, self.run)
@@ -69,12 +71,13 @@ class Controller(Node):
         self.ai_path = Path()
         
         # Weighting matrices
-        self.Q_weight = np.diag([20, # x
-                                 50, # y 
-                                 10, # psi
-                                 1, # u
-                                 1, # v
-                                 1  # r
+        self.Q_weight = np.diag([10, # x
+                                 10, # y 
+                                 50, # cos psi
+                                 50, # sin psi
+                                 1e-2, # u
+                                 1e-2, # v
+                                 1e-2  # r
                                  ])
         
         self.R_weight = np.diag([1e-6, # u1
@@ -85,8 +88,8 @@ class Controller(Node):
         ### Create pytorch network
 
         # Network parameters
-        self.HL_size = 200
-        input_size = 6 # x, y, psi, u, v, r
+        self.HL_size = 120
+        input_size = 7 # x, y, cos psi, sin psi, u, v, r
         output_size = 2 # u1, u2
         self.learning_rate = 1e-4
 
@@ -169,7 +172,7 @@ class Controller(Node):
             train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
 
             # Main training
-            self.target = [0.,0.,0.,0.,0.,0.] # Default initial target
+            self.target = [0.,0.,1.,0.,0.,0.,0.] # Default initial target
 
             self.trainer.updateTarget(self.target) # To be used for trajectory tracking
 
@@ -178,10 +181,11 @@ class Controller(Node):
             self.training_thread = threading.Thread(target=self.trainer.train, args=(self.target,)) # Start training process on a separate thread
             self.trainer.running = True
             self.training_thread.start()
+            self.trainer.training = train
 
         if self.ai_path.poses and self.state is not None: # Make sure the path is not empty
 
-            self.target = cf.compute_target(self.ai_path, self.dt)
+            self.target = cf.compute_target(self.ai_path, self.dt, sc=True)
             self.trainer.updateTarget(self.target)
 
             self.trainer.updateState(self.state)
@@ -229,7 +233,8 @@ class Controller(Node):
 
         # Debug info
         # self.get_logger().info(f"Grad: {self.trainer.gradient_display}")
-        self.get_logger().info(f"Rboot frame: {self.trainer.robot_frame}")
+        # self.get_logger().info(f"Robot frame: {self.trainer.robot_frame}")
+        # self.get_logger().info(f"Skew angle: {self.trainer.skew}")
         # if self.trainer.error_display is not None:
         #     self.get_logger().info(f"State: \n{self.trainer.state_display}")
         #     self.get_logger().info(f"Target: \n{self.trainer.target_display}")        

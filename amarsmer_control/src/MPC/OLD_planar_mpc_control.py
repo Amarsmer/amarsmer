@@ -36,7 +36,7 @@ class Controller(Node):
         self.timer = self.create_timer(self.dt, self.move)
 
         # MPC Parameters
-        self.mpc_horizon = 20
+        self.mpc_horizon = 10
         self.mpc_time = 2.0
         self.mpc_path = Path()
         linear_bound = 40.0
@@ -47,8 +47,7 @@ class Controller(Node):
                              
         self.Q_weight = np.diag([50, # x
                                  50, # y 
-                                 40, # cos psi
-                                 40, # sin psi
+                                 40, # psi
                                  1, # u
                                  1, # v
                                  1  # r
@@ -68,10 +67,7 @@ class Controller(Node):
         return s + ns*1e-9
 
     def ctrl_callback(self, msg):
-        # self.state = np.array(msg.state.data)
-        x,y,psi,u,v,r = msg.state.data
-        self.state = np.array([x,y, np.cos(psi), np.sin(psi), u, v, r])
-
+        self.state = np.array(msg.state.data)
         self.mpc_path = msg.path
 
     def move(self):
@@ -104,12 +100,12 @@ class Controller(Node):
         if self.mpc_path.poses: # Make sure the path is not empty
             u = self.controller.solve(path=self.mpc_path, x_current=self.state)
 
-        # crit_x = self.state.transpose() @ self.Q_weight @ self.state
-        # crit_u = u.transpose() @ self.R_weight @ u
-        # loss = crit_x + crit_u
-        # self.loss.append([self.get_time(), loss])
+        crit_x = self.state.transpose() @ self.Q_weight @ self.state
+        crit_u = u.transpose() @ self.R_weight @ u
+        loss = crit_x + crit_u
+        self.loss.append([self.get_time(), loss])
 
-        # np.save('MPC_loss', self.loss)
+        np.save('MPC_loss', self.loss)
 
         # self.get_logger().info(f'\nState: {self.state}\n\nPath*: {self.mpc_path.poses[0]} \n\nU: {u}')
         status = self.controller.error_msg

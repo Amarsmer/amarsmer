@@ -93,7 +93,7 @@ The target can be adjusted with sliders (PID currently not compatible with path 
 ### MPC
 The MPC controller is ran with:
 
-`ros2 launch amarsmer_control Sim_launch.py controller_type:='MPC`
+`ros2 launch amarsmer_control Sim_launch.py controller_type:='MPC'`
 
 ### AI
 The full launch file for AI training and control (including world launch) is ran with:
