@@ -38,7 +38,7 @@ def launch_setup():
         thr_nb = archi.get('thrusters')
 
         controllers = {'PID': {
-                                'node': 'PID.py',
+                                'node': 'PID_control.py',
                                 'params': {'nb_thrusters' : thr_nb,
                                            'dt' : sl_dt}
                         },

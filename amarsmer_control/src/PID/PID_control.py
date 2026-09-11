@@ -84,8 +84,8 @@ class Controller(Node):
         u = [0]*self.nb_thrusters
 
         if self.PID_path.poses: # Make sure the path is not empty
-            target = cf.compute_target(self.controller_path, self.dt)
-            u,_ = self.controller.compute(current_state, target[:3])
+            target = cf.compute_target(self.PID_path, self.dt)
+            u,_ = self.controller.compute(self.state, target[:3])
 
         # Publish computed thrust
         publisher_msg = Float32MultiArray()

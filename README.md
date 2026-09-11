@@ -82,8 +82,6 @@ Some parameters can be set at launch for ease of use.
 
 ## Controllers
 ### PID
-~~Basic control is available in the [auv_control package](https://github.com/CentraleNantesROV/auv_control)~~
-
 The PID controller is ran with:
 
 `ros2 launch amarsmer_control Sim_launch.py controller_type:='PID'` 
@@ -95,18 +93,22 @@ The MPC controller is ran with:
 
 `ros2 launch amarsmer_control Sim_launch.py controller_type:='MPC'`
 
+Below is a launch example using every parameter:
+
+`ros2 launch amarsmer_control Sim_launch.py trajectory:='sin' network_name:='name' train:=True`
+
 ### AI
 The full launch file for AI training and control (including world launch) is ran with:
 
-`ros2 launch amarsmer_control AI_launch.py`
+`ros2 launch amarsmer_control Sim_launch.py`
 
 Below is a launch example using every parameter:
 
-`ros2 launch amarsmer_control AI_launch.py trajectory:='sin' network_name:='name' train:=True`
+`ros2 launch amarsmer_control Sim_launch.py trajectory:='sin' network_name:='name' train:=True`
 
 Currently the training starts automatically. If considered satisfactory, it can be stopped and the associated network saved with the following command:
 
-'ros2 topic pub --once /amarsmer/input_str std_msgs/msg/String "data: stop [network_name]"'
+`ros2 topic pub --once /amarsmer/input_str std_msgs/msg/String "data: stop [network_name]"`
 
 # License
 Amarsmer package is open-sourced under the MIT License. See the LICENSE file for details.
