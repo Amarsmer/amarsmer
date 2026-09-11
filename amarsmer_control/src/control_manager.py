@@ -40,6 +40,9 @@ class Controller(Node):
         if comment != '':
             comment = f'_{comment}'
 
+        self.declare_parameter('nb_thrusters', 2) 
+        self.nb_thrusters = self.get_parameter('nb_thrusters').get_parameter_value().integer_value
+
         self.declare_parameter('simulation', True) 
         self.isSimulation = self.get_parameter('simulation').get_parameter_value().bool_value
 
@@ -92,13 +95,15 @@ class Controller(Node):
         # Initialize monitoring values
         self.monitoring = []
 
-        column_names = ['t','x','y','psi','x_d','y_d','psi_d','u1','u2']
+        column_names = ['t','x','y','psi','x_d','y_d','psi_d']
+        column_names.extend([f'u{i+1}' for i in range(self.nb_thrusters)]) # Add thruster input columns
 
         if self.controller_type == 'AI':
             self.aiData_subscriber = self.create_subscription(Float32MultiArray, '/amarsmer/aiData', self.aiData_callback, 10)
 
-            column_names.extend(['grad1', 'grad2', 'loss_x', 'loss_u'])
-            self.AI_data = [0]*4
+            ext_col = [*[f'grad{i+1}' for i in range(self.nb_thrusters)], 'loss_x', 'loss_u']
+            column_names.extend(ext_col)
+            self.AI_data = [0]*len(ext_col)
 
         self.monitoring.append(column_names)
 
@@ -107,7 +112,8 @@ class Controller(Node):
         ctrl = self.controller_type # Inefficient but more readable
         date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
         sim = 'simulation' if self.isSimulation else 'real'
-        self.title = f'data/{ctrl}_data/{date}-{ctrl}_{sim}{network}{comment}_data'
+        robot = 'uvr'[:self.nb_thrusters]
+        self.title = f'data/{ctrl}_data/{date}-{ctrl}_{robot}_{sim}{network}{comment}_data'
 
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
@@ -204,11 +210,11 @@ class Controller(Node):
             y_d_m = target[1]
             psi_d_m = target[2]
 
-            data_array = [current_time, x_m, y_m, psi_m, x_d_m, y_d_m, psi_d_m, self.u[0], self.u[1]]
+            data_array = [current_time, x_m, y_m, psi_m, x_d_m, y_d_m, psi_d_m, *self.u]
 
             # # TODO
             if self.controller_type == 'AI':
-                # data_array.extend(['grad1', 'grad2', 'loss_x', 'loss_u'])
+                # Data shape is ['grad1', 'grad2', 'loss_x', 'loss_u']
                 data_array.extend(self.AI_data)
 
             self.monitoring.append(data_array)

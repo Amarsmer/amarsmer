@@ -62,7 +62,7 @@ def read_model():
 
 #################### Gradient computation ####################
 
-def build_grad(B, mass, added_mass, inertia, dampening, radius, Qw, Rw):
+def build_grad(B, mass, added_mass, inertia, dampening, radius, half_length, Qw, Rw):
 
     ########## Variable init ########
 
@@ -97,6 +97,7 @@ def build_grad(B, mass, added_mass, inertia, dampening, radius, Qw, Rw):
 
     # Control input / thruster geometry parameter
     R = sp.Symbol('R')
+    hl = sp.Symbol('hl')
 
     # Control inputs
     nb_thr = B.shape[1]
@@ -242,6 +243,7 @@ def build_grad(B, mass, added_mass, inertia, dampening, radius, Qw, Rw):
     subs.update({Iz: inertia})
     subs.update(zip(damping_symbols,dampening))
     subs.update({R: radius})
+    subs.update({hl: half_length})
 
     # Lambdify
     f_num = full_gradient.subs(subs)

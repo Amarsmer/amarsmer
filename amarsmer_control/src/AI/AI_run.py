@@ -35,7 +35,10 @@ class Controller(Node):
         self.declare_parameter('train', True)            # Wether network are updated, 'False' implies testing
         self.declare_parameter('automate', True)         # Test automation will change the robot's pose if some loss requirements are met
         self.input_string = ['','']                      # Meant to be used as ['instruction', 'argument']
+        self.declare_parameter('nb_thrusters', 2) 
         self.declare_parameter('dt', 0.05)
+
+        self.nb_thrusters = self.get_parameter('nb_thrusters').get_parameter_value().integer_value
 
         #################################### ROS2 Communication ####################################
 
@@ -75,14 +78,17 @@ class Controller(Node):
                                  10, # y 
                                  50, # cos psi
                                  50, # sin psi
-                                 1e-2, # u
-                                 1e-2, # v
-                                 1e-2  # r
+                                 1, # u
+                                 1, # v
+                                 1  # r
                                  ])
         
-        self.R_weight = np.diag([1e-6, # u1
-                                 1e-6  # u2
-                                 ])
+        # self.R_weight = np.diag([1e-6, # u1
+        #                          1e-6  # u2
+        #                          ])
+
+        self.R_weight = np.diag([1e-6]*self.nb_thrusters)
+
         # TODO The difference of R weight between AI and MPC may come from delta_t applied to the gradient, further investigation required
 
         ### Create pytorch network
@@ -90,14 +96,14 @@ class Controller(Node):
         # Network parameters
         self.HL_size = 120
         input_size = 7 # x, y, cos psi, sin psi, u, v, r
-        output_size = 2 # u1, u2
+        output_size = self.nb_thrusters # u1, u2, ...
         self.learning_rate = 1e-4
 
         self.trainer = None
         self.training_initiated = False
-
-        # network loading
+        
         network_name = self.get_parameter('network_name').get_parameter_value().string_value
+        # network loading
         if network_name == '':
             self.get_logger().info(f"No network loaded. Initializing random network weights with hidden layer size: {self.HL_size}.")
             self.network = NN(input_size, self.HL_size, output_size)
@@ -167,7 +173,7 @@ class Controller(Node):
             self.t0 = self.get_time() # Initial time for data collection
                     
             # Initialize trainer
-            self.trainer = PyTorchOnlineTrainer(self.network, self.learning_rate, self.Q_weight, self.R_weight)
+            self.trainer = PyTorchOnlineTrainer(self.network, self.learning_rate, self.Q_weight, self.R_weight, self.nb_thrusters)
 
             train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
 
@@ -240,7 +246,7 @@ class Controller(Node):
         #     self.get_logger().info(f"Target: \n{self.trainer.target_display}")        
         #     self.get_logger().info(f"Error: \n{self.trainer.error_display}")    
             
-        #################################### Stop training and record data ####################################
+        #################################### Stop training and record network ####################################
         
         if self.input_string[0] == 'stop': # Stop training session from terminal, there is currently no way to restart training
             network_name = self.input_string[1]
@@ -250,7 +256,8 @@ class Controller(Node):
 
             # Save the network
             json_obj = self.network.save_network_to_json()
-            with open(f'saved_networks/{network_name}.json', 'w') as fp:
+            robot = 'uvr'[:self.nb_thrusters]
+            with open(f'saved_networks/{robot}_{network_name}.json', 'w') as fp:
                 
                 json.dump(json_obj, fp)
 

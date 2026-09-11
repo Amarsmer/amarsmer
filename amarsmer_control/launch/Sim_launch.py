@@ -52,6 +52,7 @@ def launch_setup():
                                 'params': {'network_name' : sl_network_name,
                                            'train': sl_train,
                                            'automate': sl_automate,
+                                           'nb_thrusters' : thr_nb,
                                            'dt' : sl_dt}
                         }
                 }
@@ -79,6 +80,7 @@ def launch_setup():
                 'control_manager.py',
                 parameters={'controller_type' : sl_controller,
                             'comment' : sl_comment,
+                            'nb_thrusters' : thr_nb,
                             'simulation' : True,
                             'use_sim_time': True})
     

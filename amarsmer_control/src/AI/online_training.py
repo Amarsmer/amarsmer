@@ -29,10 +29,12 @@ def inRobotFrame(robot_coords, target_coords):
     return x[0],y[0],cpsi[0],spsi[0]
 
 class PyTorchOnlineTrainer:
-    def __init__(self, nn_model, in_learning_rate = 5e-4, in_Q=np.eye(6), in_R=np.eye(3)):
+    def __init__(self, nn_model, in_learning_rate = 5e-4, in_Q=np.eye(6), in_R=np.eye(3), nb_thr = 2):
 
         self.network = nn_model
         self.unwrap = False
+
+        self.nb_thr = nb_thr
 
         # Weighting matrices
         self.Q = in_Q
@@ -63,20 +65,28 @@ class PyTorchOnlineTrainer:
         ## Modeling
         # B matrix, NED not yet implemented, so the last row is reversed
         R = sp.Symbol('R')
+        hl = sp.Symbol('hl')
 
-        B = sp.Matrix([[1, 1],
-                       [0, 0],
-                       [R,-R]])
+        if self.nb_thr == 2:
+            B = sp.Matrix([[1, 1],
+                           [0, 0],
+                           [R,-R]])
+
+        elif self.nb_thr == 3:
+            B = sp.Matrix([[1, 1, 0],
+                           [0, 0, 1],
+                           [R,-R, hl]])
 
         # Coefficients for gradient computation (reduces unnecessary temp variable attribution in loop since it's constant)
         # Read YAML file for robot's properties
         mass, inertia, added_masses, viscous_drag, _ = cf.read_model()
 
         radius = 0.15
+        hl = 0.3
         planar_added_mass = [added_masses[i] for i in [0,1,5]]
         planar_dampening = [viscous_drag[i] for i in [0,1,5]]
         
-        self.compute_gradient,_,_,_ = cf.build_grad(B, mass, planar_added_mass, inertia[-1], planar_dampening, radius, in_Q, in_R)
+        self.compute_gradient,_,_,_ = cf.build_grad(B, mass, planar_added_mass, inertia[-1], planar_dampening, radius, hl, in_Q, in_R)
 
         self.trainer_set = False # Make sure inputs have been computed before recording data
 
@@ -92,20 +102,10 @@ class PyTorchOnlineTrainer:
         self.target_display = None
 
     def updateTarget(self, in_target):
-        temp_target = in_target
-
-        if self.unwrap and self.previous_target is not None:
-            temp_target[2] = np.unwrap([self.previous_target[2],temp_target[2]])[-1]
-
-        self.target = np.array(temp_target).reshape(-1, 1)
+        self.target = np.array(in_target).reshape(-1, 1)
 
     def updateState(self, in_state):
-        temp_state = in_state
-
-        if self.unwrap and self.previous_state is not None:
-            temp_state[2] = np.unwrap([self.previous_state[2],temp_state[2]])[-1]
-
-        self.state = temp_state
+        self.state = in_state
 
     def computeError(self):
 
@@ -130,11 +130,17 @@ class PyTorchOnlineTrainer:
         # skew = -float(np.arctan((target[1]-state[1])/(target[0]-state[0])))
         self.skew = skew
 
+        if self.nb_thr == 2 :
+            skew_target = skew
+
+        elif self.nb_thr == 3 :
+            skew_target = np.arctan2(target[3],target[2])
+
         # error = self.state - self.target
         error = np.array([state[0] - target[0],
                           state[1] - target[1],
-                          np.cos(state[2]) - np.cos(skew),
-                          np.sin(state[2]) - np.sin(skew),
+                          np.cos(state[2]) - np.cos(skew_target),
+                          np.sin(state[2]) - np.sin(skew_target),
                           state[3] - target[3],
                           state[4] - target[4],
                           state[5] - target[5],
@@ -153,7 +159,7 @@ class PyTorchOnlineTrainer:
         # skewed_angle = ea*angle + eb*heading
         # skewed_angle = angle
 
-        return error, skew
+        return error, skew_target
 
     def computeNetworkInput(self, error):
         # Weight matrix used for input normalization
