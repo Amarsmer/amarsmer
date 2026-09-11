@@ -28,7 +28,11 @@ architecture_param = {'ur': {
                       'plasmar2': {
                                 'xacro': 'thrusters_plasmar2',
                                 'thrusters': 4
-                        }
+                        },
+                      'blueROV2': {
+                                'xacro': 'thrusters_blueROV2',
+                                'thrusters': 6
+                        },
                 }
                         
 

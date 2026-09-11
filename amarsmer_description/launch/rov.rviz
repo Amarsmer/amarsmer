@@ -103,6 +103,24 @@ Visualization Manager:
           Alpha: 1
           Show Axes: false
           Show Trail: false
+        amarsmer/thruster5:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        amarsmer/thruster5_steering:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        amarsmer/thruster6:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        amarsmer/thruster6_steering:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
       Mass Properties:
         Inertia: false
         Mass: false
@@ -136,6 +154,14 @@ Visualization Manager:
           Value: true
         amarsmer/thruster4_steering:
           Value: true
+        amarsmer/thruster5:
+          Value: true
+        amarsmer/thruster5_steering:
+          Value: true
+        amarsmer/thruster6:
+          Value: true
+        amarsmer/thruster6_steering:
+          Value: true
         world:
           Value: true
       Marker Scale: 1
@@ -157,6 +183,12 @@ Visualization Manager:
                 {}
             amarsmer/thruster4_steering:
               amarsmer/thruster4:
+                {}
+            amarsmer/thruster5_steering:
+              amarsmer/thruster5:
+                {}
+            amarsmer/thruster6_steering:
+              amarsmer/thruster6:
                 {}
       Update Interval: 0
       Value: true
@@ -261,6 +293,48 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /amarsmer/amarsmer_thruster4_wrench
+      Torque Arrow Scale: 0.2
+      Arrow Width: 0.3
+      Torque Color: 255; 0; 0
+      Value: true
+    - Accept NaN Values: false
+
+      Alpha: 1
+      Arrow Width: 0.5
+      Class: rviz_default_plugins/Wrench
+      Enabled: true
+      Force Arrow Scale: 0.1
+      Force Color: 255; 0; 0
+      History Length: 1
+      Name: Wrench_5
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /amarsmer/amarsmer_thruster5_wrench
+      Torque Arrow Scale: 0.2
+      Arrow Width: 0.3
+      Torque Color: 255; 0; 0
+      Value: true
+    - Accept NaN Values: false
+
+      Alpha: 1
+      Arrow Width: 0.5
+      Class: rviz_default_plugins/Wrench
+      Enabled: true
+      Force Arrow Scale: 0.1
+      Force Color: 255; 0; 0
+      History Length: 1
+      Name: Wrench_6
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /amarsmer/amarsmer_thruster6_wrench
       Torque Arrow Scale: 0.2
       Arrow Width: 0.3
       Torque Color: 255; 0; 0

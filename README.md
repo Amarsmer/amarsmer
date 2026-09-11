@@ -86,7 +86,7 @@ The PID controller is ran with:
 
 `ros2 launch amarsmer_control Sim_launch.py controller_type:='PID'` 
 
-The target can be adjusted with sliders (PID currently not compatible with path generation).
+It currently only supports ur architecture.
 
 ### MPC
 The MPC controller is ran with:
@@ -95,7 +95,7 @@ The MPC controller is ran with:
 
 Below is a launch example using every parameter:
 
-`ros2 launch amarsmer_control Sim_launch.py trajectory:='sin' network_name:='name' train:=True`
+`ros2 launch amarsmer_control Sim_launch.py thrusters:= 'uvr' trajectory:='sin' network_name:='name' train:=True`
 
 ### AI
 The full launch file for AI training and control (including world launch) is ran with:
@@ -104,7 +104,7 @@ The full launch file for AI training and control (including world launch) is ran
 
 Below is a launch example using every parameter:
 
-`ros2 launch amarsmer_control Sim_launch.py trajectory:='sin' network_name:='name' train:=True`
+`ros2 launch amarsmer_control Sim_launch.py thrusters:= 'ur' trajectory:='sin' network_name:='name' train:=True`
 
 Currently the training starts automatically. If considered satisfactory, it can be stopped and the associated network saved with the following command:
 
