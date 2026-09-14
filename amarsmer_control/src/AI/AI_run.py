@@ -76,8 +76,8 @@ class Controller(Node):
         # Weighting matrices
         self.Q_weight = np.diag([10, # x
                                  10, # y 
-                                 50, # cos psi
-                                 50, # sin psi
+                                 60, # cos psi
+                                 60, # sin psi
                                  1, # u
                                  1, # v
                                  1  # r
@@ -94,14 +94,14 @@ class Controller(Node):
         ### Create pytorch network
 
         # Network parameters
-        self.HL_size = 120
+        self.HL_size = 60
         input_size = 7 # x, y, cos psi, sin psi, u, v, r
         output_size = self.nb_thrusters # u1, u2, ...
         self.learning_rate = 1e-4
 
         self.trainer = None
         self.training_initiated = False
-        
+
         network_name = self.get_parameter('network_name').get_parameter_value().string_value
         # network loading
         if network_name == '':
@@ -136,7 +136,7 @@ class Controller(Node):
             self.acceptable_loss_delay = 10. # If the loss is below the threshold for this amount of time (s), the robot is moved
             
             # Poses to be parsed 
-            self.pose_index = -1
+            self.pose_index = 0
             self.initial_poses = [np.array([4., 4., 0., 0., 0., 1.]),
                                 np.array([-4., -4., 0., 0., 0., 4.]),
                                 np.array([4., -4., 0., 0., 0., 1.]),
@@ -256,7 +256,7 @@ class Controller(Node):
 
             # Save the network
             json_obj = self.network.save_network_to_json()
-            robot = 'uvr'[:self.nb_thrusters]
+            robot = 'uvr' if self.nb_thrusters == 3 else 'ur'
             with open(f'saved_networks/{robot}_{network_name}.json', 'w') as fp:
                 
                 json.dump(json_obj, fp)

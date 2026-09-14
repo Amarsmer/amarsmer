@@ -124,11 +124,11 @@ class PyTorchOnlineTrainer:
         target = self.target.copy().ravel()
         dx = state[0] - target[0]
         dy = state[1] - target[1]
-        skew = np.arctan2(-dy, -dx)
-        # skew = float(np.arctan(state[1]/state[0]))
 
-        # skew = -float(np.arctan((target[1]-state[1])/(target[0]-state[0])))
-        self.skew = skew
+        if np.hypot(dx,dy) > 0.3:
+            skew = np.arctan2(-dy, -dx)
+        else:
+            skew = np.arctan2(target[3],target[2])
 
         if self.nb_thr == 2 :
             skew_target = skew
