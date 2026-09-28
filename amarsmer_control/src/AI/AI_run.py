@@ -37,10 +37,16 @@ class Controller(Node):
         self.input_string = ['','']                      # Meant to be used as ['instruction', 'argument']
         self.declare_parameter('nb_thrusters', 2) 
         self.declare_parameter('dt', 0.05)
+        self.declare_parameter('order', 1)
 
         self.nb_thrusters = self.get_parameter('nb_thrusters').get_parameter_value().integer_value
+        self.order = self.get_parameter('order').get_parameter_value().integer_value
 
-        #################################### ROS2 Communication ####################################
+        #################################### 
+        #
+        # ROS2 Communication 
+        #
+        ####################################
 
         self.aiData_publisher = self.create_publisher(Float32MultiArray, "/amarsmer/aiData",10)
         self.thruster_input_publisher = self.create_publisher(Float32MultiArray, "/thruster_input",10)
@@ -67,25 +73,25 @@ class Controller(Node):
                                  0.015  # u2
                                  ])
         """
-        
-        #################################### Initiating variables ####################################
+
+        #################################### 
+        # 
+        # Initiating variables 
+        # 
+        ####################################
 
         self.state = None
         self.ai_path = Path()
-        
+
         # Weighting matrices
         self.Q_weight = np.diag([10, # x
                                  10, # y 
-                                 60, # cos psi
-                                 60, # sin psi
+                                 50, # cos psi
+                                 50, # sin psi
                                  1, # u
                                  1, # v
                                  1  # r
                                  ])
-        
-        # self.R_weight = np.diag([1e-6, # u1
-        #                          1e-6  # u2
-        #                          ])
 
         self.R_weight = np.diag([1e-6]*self.nb_thrusters)
 
@@ -94,8 +100,8 @@ class Controller(Node):
         ### Create pytorch network
 
         # Network parameters
-        self.HL_size = 60
-        input_size = 7 # x, y, cos psi, sin psi, u, v, r
+        self.HL_size = 80
+        input_size = 7*self.order # x, y, cos psi, sin psi, u, v, r
         output_size = self.nb_thrusters # u1, u2, ...
         self.learning_rate = 1e-4
 
@@ -113,7 +119,7 @@ class Controller(Node):
             try:
                 with open(f'saved_networks/{network_name}.json') as fp:
                     json_obj = json.load(fp)
-                
+
             # If it does not, display error message and create a new network
             except:
                 self.get_logger().info(f"#################### ERROR: no network file with the name: {network_name}. Initializing random network with hidden layer size: {self.HL_size}. ####################")
@@ -130,11 +136,11 @@ class Controller(Node):
         # If the loss is below the threshold for the entire set delay, the robot is moved to the next pose
         self.automate = self.get_parameter('automate').get_parameter_value().bool_value
         if self.automate:
-            self.loss_threshold = 15.
+            self.loss_threshold = 20.
             self.previous_loss = 1e10 # Initialized at an arbitrarily high value instead of None to reduce the number of if statements
             self.minimal_loss_timer = None
             self.acceptable_loss_delay = 10. # If the loss is below the threshold for this amount of time (s), the robot is moved
-            
+
             # Poses to be parsed 
             self.pose_index = 0
             self.initial_poses = [np.array([4., 4., 0., 0., 0., 1.]),
@@ -157,7 +163,7 @@ class Controller(Node):
     def ctrl_callback(self, msg):
         self.state = np.array(msg.state.data).reshape(-1, 1)
         self.ai_path = msg.path
-    
+
     def str_input_callback(self, msg: String):
         self.input_string = msg.data.split()
 
@@ -165,20 +171,24 @@ class Controller(Node):
         # Update time
         self.current_time = self.get_time()
 
-        #################################### Initialize ####################################
+        #################################### 
+        #
+        # Initialize 
+        #
+        ####################################
 
         if not self.training_initiated: # This code used to be in a while loop and requires adjustements to work as a ROS2 node
             self.training_initiated = True
 
             self.t0 = self.get_time() # Initial time for data collection
-                    
+
             # Initialize trainer
-            self.trainer = PyTorchOnlineTrainer(self.network, self.learning_rate, self.Q_weight, self.R_weight, self.nb_thrusters)
+            self.trainer = PyTorchOnlineTrainer(self.network, self.learning_rate, self.order, self.Q_weight, self.R_weight, self.nb_thrusters)
 
             train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
 
             # Main training
-            self.target = [0.,0.,1.,0.,0.,0.,0.] # Default initial target
+            self.target = [0.,0.,0.,0.,0.,0.] # Default initial target
 
             self.trainer.updateTarget(self.target) # To be used for trajectory tracking
 
@@ -191,12 +201,16 @@ class Controller(Node):
 
         if self.ai_path.poses and self.state is not None: # Make sure the path is not empty
 
-            self.target = cf.compute_target(self.ai_path, self.dt, sc=True)
+            self.target = cf.compute_target(self.ai_path, self.dt)
             self.trainer.updateTarget(self.target)
 
             self.trainer.updateState(self.state)
 
-        #################################### Training automation ####################################
+        #################################### 
+        # 
+        # Training automation 
+        # 
+        ####################################
 
         if self.trainer.loss and self.automate: # Make sure the loss has been initialized
 
@@ -217,7 +231,12 @@ class Controller(Node):
 
             self.previous_loss = self.trainer.loss
 
-        #################################### Update robot control and publish it to main control node ####################################
+        #################################### 
+        # 
+        # Update robot control and publish it to main control node 
+        # 
+        ####################################
+
         self.u = self.trainer.u.ravel()
 
         publisher_msg = Float32MultiArray()
@@ -240,14 +259,20 @@ class Controller(Node):
         # Debug info
         # self.get_logger().info(f"Grad: {self.trainer.gradient_display}")
         # self.get_logger().info(f"Robot frame: {self.trainer.robot_frame}")
+        # self.get_logger().info(f"Target frame: {self.trainer.target_frame}")
         # self.get_logger().info(f"Skew angle: {self.trainer.skew}")
+        self.get_logger().info(f"input_list: {self.trainer.input_list}")
         # if self.trainer.error_display is not None:
         #     self.get_logger().info(f"State: \n{self.trainer.state_display}")
         #     self.get_logger().info(f"Target: \n{self.trainer.target_display}")        
         #     self.get_logger().info(f"Error: \n{self.trainer.error_display}")    
-            
-        #################################### Stop training and record network ####################################
-        
+
+        #################################### 
+        # 
+        # Stop training and record network
+        # 
+        ####################################
+
         if self.input_string[0] == 'stop': # Stop training session from terminal, there is currently no way to restart training
             network_name = self.input_string[1]
             self.input_string = ['','']
@@ -257,8 +282,8 @@ class Controller(Node):
             # Save the network
             json_obj = self.network.save_network_to_json()
             robot = 'uvr' if self.nb_thrusters == 3 else 'ur'
-            with open(f'saved_networks/{robot}_{network_name}.json', 'w') as fp:
-                
+            with open(f'saved_networks/{robot}_{network_name}_{self.order}-order.json', 'w') as fp:
+ 
                 json.dump(json_obj, fp)
 
             self.get_logger().info("Training stopped")

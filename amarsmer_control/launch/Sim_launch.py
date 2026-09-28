@@ -16,6 +16,7 @@ sl_dt = sl.declare_arg('dt', default_value = 0.05)                              
 sl_network_name = sl.declare_arg('network_name', default_value = '')             # Load saved network (name only, no ".json")
 sl_train = sl.declare_arg('train', default_value = True)                         # Whether to train or test the network
 sl_automate = sl.declare_arg('automate', default_value = False)                  # Will teleport the robot if the criteria is small enough for a set duration, mostly used with the station_keeping task
+sl_order = sl.declare_arg('order', default_value = 1)   
 
 architecture_param = {'ur': {
                                 'xacro': 'thrusters_plasmar_ur',
@@ -57,7 +58,8 @@ def launch_setup():
                                            'train': sl_train,
                                            'automate': sl_automate,
                                            'nb_thrusters' : thr_nb,
-                                           'dt' : sl_dt}
+                                           'dt' : sl_dt,
+                                           'order': sl_order}
                         }
                 }
                     

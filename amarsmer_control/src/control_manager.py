@@ -112,7 +112,7 @@ class Controller(Node):
         ctrl = self.controller_type # Inefficient but more readable
         date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
         sim = 'simulation' if self.isSimulation else 'real'
-        robot = 'uvr'[:self.nb_thrusters]
+        robot = 'ur' if self.nb_thrusters == 2 else 'uvr'
         self.title = f'data/{ctrl}_data/{date}-{ctrl}_{robot}_{sim}{network}{comment}_data'
 
     def get_time(self):
@@ -223,7 +223,7 @@ class Controller(Node):
             publisher_msg.data = data_array
             self.data_publisher.publish(publisher_msg)
 
-            if (current_time - self.t_record) > 0.1: # Update the saved file at set interval as doing so every step may corrupt the file if the callback is too frequent
+            if (current_time - self.t_record) > self.dt: # Update the saved file at set interval as doing so every step may corrupt the file if the callback is too frequent
                 self.t_record = current_time
                 np.save(self.title, self.monitoring)
         

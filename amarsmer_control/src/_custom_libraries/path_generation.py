@@ -71,8 +71,8 @@ class PathGeneration(Node):
         # Sin line
         if path_shape == 'sin':
             t/=2
-            a = 2
-            f = 0.5
+            a = 3
+            f = 0.2
             vx = 0.5
 
             x = vx*t
