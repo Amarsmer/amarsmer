@@ -15,7 +15,7 @@ sl_dt = sl.declare_arg('dt', default_value = 0.05)                              
 # AI specific parameters
 sl_network_name = sl.declare_arg('network_name', default_value = '')             # Load saved network (name only, no ".json")
 sl_train = sl.declare_arg('train', default_value = True)                         # Whether to train or test the network
-sl_automate = sl.declare_arg('automate', default_value = False)                  # Will teleport the robot if the criteria is small enough for a set duration, mostly used with the station_keeping task
+sl_automate = sl.declare_arg('automate', default_value = '')                  # Will teleport the robot if the criteria is small enough for a set duration, mostly used with the station_keeping task
 sl_order = sl.declare_arg('order', default_value = 1)   
 
 architecture_param = {'ur': {

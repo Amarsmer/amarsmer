@@ -11,12 +11,17 @@ def wrap_angle(angle):
     return (angle + np.pi) % (2 * np.pi) - np.pi
 
 def frameTransform(robot_coords, target_coords, frame = 'robot'):
-    x_r,y_r,cpsi_r,spsi_r,_,_,_ = robot_coords
-    x_t,y_t,cpsi_t,spsi_t,_,_,_ = target_coords
+    robot_coords = np.asarray(robot_coords).ravel()
+    target_coords = np.asarray(target_coords).ravel()
 
-    psi_r = np.arctan2(spsi_r,cpsi_r)
+    x_r,y_r,psi_r,_,_,_ = robot_coords
+    x_t,y_t,psi_t,_,_,_ = target_coords
 
-    psi_t = np.arctan2(spsi_t,cpsi_t)
+    cpsi_r = np.cos(psi_r)
+    spsi_r = np.sin(psi_r)
+
+    cpsi_t = np.cos(psi_t)
+    spsi_t = np.sin(psi_t)
 
     if frame == 'robot':
         x = (x_t - x_r)*cpsi_r + (y_t - y_r)*spsi_r
@@ -28,7 +33,7 @@ def frameTransform(robot_coords, target_coords, frame = 'robot'):
         y = (y_r - y_t)*cpsi_t - (x_r - x_t)*spsi_t
         psi = psi_r - psi_t
 
-    return x[0],y[0],psi[0]
+    return x,y,psi
 
 class PyTorchOnlineTrainer:
     def __init__(self, nn_model, in_learning_rate = 5e-4, order = 1, in_Q=np.eye(6), in_R=np.eye(3), nb_thr = 2):
@@ -43,7 +48,6 @@ class PyTorchOnlineTrainer:
         self.R = in_R
 
         # Training state
-        self.running = False
         self.training = True
 
         self.learning_rate = in_learning_rate
@@ -54,15 +58,13 @@ class PyTorchOnlineTrainer:
 
         # Variables init
         self.state = None
-        self.state_cost = None
         self.target = None
         self.error = None
         self.u = np.zeros(2)
         self.loss = None
         self.input_list = [0]*7*order
 
-        self.previous_state = None
-        self.previous_target = None
+        self.running = True
 
         self.robot_frame = [0,0,0]
         self.target_frame = [0,0,0]
@@ -106,48 +108,31 @@ class PyTorchOnlineTrainer:
         self.target_display = None
 
     def updateTarget(self, in_target):
-        # self.target = np.array(in_target).reshape(-1, 1)
-        self.target = np.array([in_target[0],
-                                in_target[1],
-                                np.cos(in_target[2]),
-                                np.sin(in_target[2]),
-                                in_target[3],
-                                in_target[4],
-                                in_target[5]]).reshape(-1, 1)
+        self.target = np.array(in_target).reshape(-1, 1)
 
     def updateState(self, in_state):
-        self.state_cost = in_state
-
-        self.state = np.array([in_state[0],
-                               in_state[1],
-                               np.cos(in_state[2]),
-                               np.sin(in_state[2]),
-                               in_state[3],
-                               in_state[4],
-                               in_state[5]]).reshape(-1, 1)
+        self.state = in_state
 
     def computeError(self):
 
         def theta_s(x, y): # Angle skew, used to prevent the singularity in x=0
-            return math.tanh(10.*x)*math.atan(2.*y)
+            return math.tanh(5.*x)*math.atan(3.*y)
 
         # Compute error as a column vector
         self.state_display = self.state.copy()
         self.target_display = self.target.copy()
 
+        state = self.state.ravel()
+        target = self.target.ravel()
+
         self.robot_frame = frameTransform(self.state, self.target, 'robot')
 
-        state = self.state.copy().ravel()
-        target = self.target.copy().ravel()
-
-        error = self.state - self.target
-
         # Compute angle skew
-        self.target_frame = frameTransform(self.state, self.target, 'target')
-        dx_t,dy_t,_ = self.target_frame
+        dx_t, dy_t, dpsi_t = frameTransform(self.state, self.target, 'target')
+        self.target_frame = [dx_t, dy_t, dpsi_t]
 
         psi = np.arctan2(target[3],target[2])
-        skew = wrap_angle(psi + theta_s(dx_t,dy_t))
+        skew = theta_s(dx_t,dy_t)
 
         if self.nb_thr == 2 :
             skew_target = skew
@@ -155,7 +140,21 @@ class PyTorchOnlineTrainer:
         elif self.nb_thr == 3 :
             skew_target = psi
 
-        return error, skew_target
+        state = np.array([dx_t,
+                          dy_t,
+                          np.cos(dpsi_t),
+                          np.sin(dpsi_t),
+                          state[3],
+                          state[4],
+                          state[5]]).reshape(-1, 1)
+
+        target = np.zeros((7,1))
+        target[2] = np.cos(skew_target)
+        target[3] = np.sin(skew_target)
+
+        error = state - target 
+
+        return error, state, target
 
     def computeNetworkInput(self, error):
         # Weight matrix used for input normalization
@@ -165,7 +164,7 @@ class PyTorchOnlineTrainer:
 
         return network_input.ravel()
 
-    def train(self, target):
+    def run(self, target):
         # Training loop
         while self.running:
             while self.state is None or self.target is None:
@@ -174,7 +173,7 @@ class PyTorchOnlineTrainer:
             # Get initial time for gradient computation later
             start_time = time.time()
 
-            error, skew_angle = self.computeError()
+            error, state_cost, target_cost = self.computeError()
             self.error_display = error.copy()
             network_input = self.computeNetworkInput(error)
 
@@ -210,11 +209,7 @@ class PyTorchOnlineTrainer:
                 self.delta_t_display = delta_t
 
                 # Manual gradient computation
-                state = self.state_cost.copy()
-                skew_target = self.target.copy()
-                skew_target[2] = np.cos(skew_angle)
-                skew_target[3] = np.sin(skew_angle)
-                grad = self.compute_gradient(state, skew_target, self.u, delta_t, 1, 1000).squeeze()
+                grad = self.compute_gradient(state_cost, target_cost, self.u, delta_t, 1, 1000).squeeze()
                 
                 # Convert to tensor grad
                 grad_tensor = torch.tensor(grad, dtype=torch.float32)

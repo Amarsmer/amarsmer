@@ -197,6 +197,13 @@ def build_grad(B, mass, added_mass, inertia, dampening, radius, half_length, Qw,
 
     x_d, y_d, psi_d, u_d, v_d, r_d = sp.symbols('x_d y_d psi_d u_d v_d r_d')
 
+    T = sp.Matrix([x_d,
+                   y_d,
+                   psi_d,
+                   u_d,
+                   v_d,
+                   r_d])
+
     T_cost = sp.Matrix([x_d,
                         y_d,
                         cos(psi_d),
@@ -247,7 +254,7 @@ def build_grad(B, mass, added_mass, inertia, dampening, radius, half_length, Qw,
 
     # Lambdify
     f_num = full_gradient.subs(subs)
-    f = sp.lambdify([X, T_cost, U, dt, alpha1, alpha2],f_num,modules='numpy')
+    f = sp.lambdify([X_cost, T_cost, U, dt, alpha1, alpha2],f_num,modules='numpy')
 
     return f, symb_full, symb_Ud, symb_Udd
 

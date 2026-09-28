@@ -33,7 +33,7 @@ class Controller(Node):
 
         self.declare_parameter('network_name', '')       # Will load a saved network file if specified, otherwise will initialize one
         self.declare_parameter('train', True)            # Wether network are updated, 'False' implies testing
-        self.declare_parameter('automate', True)         # Test automation will change the robot's pose if some loss requirements are met
+        self.declare_parameter('automate', '')         # Test automation will change the robot's pose if some loss requirements are met
         self.input_string = ['','']                      # Meant to be used as ['instruction', 'argument']
         self.declare_parameter('nb_thrusters', 2) 
         self.declare_parameter('dt', 0.05)
@@ -84,10 +84,10 @@ class Controller(Node):
         self.ai_path = Path()
 
         # Weighting matrices
-        self.Q_weight = np.diag([10, # x
-                                 10, # y 
-                                 50, # cos psi
-                                 50, # sin psi
+        self.Q_weight = np.diag([5, # x
+                                 5, # y 
+                                 60, # cos psi
+                                 60, # sin psi
                                  1, # u
                                  1, # v
                                  1  # r
@@ -100,10 +100,10 @@ class Controller(Node):
         ### Create pytorch network
 
         # Network parameters
-        self.HL_size = 80
+        self.HL_size = 40
         input_size = 7*self.order # x, y, cos psi, sin psi, u, v, r
         output_size = self.nb_thrusters # u1, u2, ...
-        self.learning_rate = 1e-4
+        self.learning_rate = 1e-3
 
         self.trainer = None
         self.training_initiated = False
@@ -132,29 +132,44 @@ class Controller(Node):
                 self.network.load_network_from_json(json_obj)
                 self.get_logger().info(f"Loading network json: {network_name}.")
 
-        ### Test automation
+        
+        #################################### 
+        # 
+        # Test automation
+        # 
+        ####################################
         # If the loss is below the threshold for the entire set delay, the robot is moved to the next pose
-        self.automate = self.get_parameter('automate').get_parameter_value().bool_value
-        if self.automate:
-            self.loss_threshold = 20.
+        self.automate = self.get_parameter('automate').get_parameter_value().string_value
+        if self.automate in ['random', 'poses']:
+            self.automate_valid = True
+            self.loss_threshold = 15.
             self.previous_loss = 1e10 # Initialized at an arbitrarily high value instead of None to reduce the number of if statements
             self.minimal_loss_timer = None
-            self.acceptable_loss_delay = 10. # If the loss is below the threshold for this amount of time (s), the robot is moved
+            self.acceptable_loss_delay = 20. # If the loss is below the threshold for this amount of time (s), the robot is moved
 
             # Poses to be parsed 
             self.pose_index = 0
-            self.initial_poses = [np.array([4., 4., 0., 0., 0., 1.]),
-                                np.array([-4., -4., 0., 0., 0., 4.]),
-                                np.array([4., -4., 0., 0., 0., 1.]),
-                                np.array([-4., 4., 0., 0., 0., np.pi/2]),
-                                np.array([0., -4., 0., 0., 0., np.pi/2.]),
-                                np.array([-4., 4., 0., 0., 0., -np.pi/2]),
-                                np.array([0., -4., 0., 0., 0., -np.pi/2.]),
-                                np.array([15., 4., 0., 0., 0., 1.]),
-                                np.array([-4., 15., 0., 0., 0., 4.]),
-                                np.array([15., 15., 0., 0., 0., 0.])]
+            if self.automate == 'poses':
+                self.initial_poses = [np.array([4., 4., 0., 0., 0., 1.]),
+                                    np.array([-4., -4., 0., 0., 0., 4.]),
+                                    np.array([4., -4., 0., 0., 0., 1.]),
+                                    np.array([-4., 4., 0., 0., 0., np.pi/2]),
+                                    np.array([0., -4., 0., 0., 0., np.pi/2.]),
+                                    np.array([-4., 4., 0., 0., 0., -np.pi/2]),
+                                    np.array([0., -4., 0., 0., 0., -np.pi/2.]),
+                                    np.array([4., 0., 0., 0., 0., 0.]),
+                                    np.array([-4., 0., 0., 0., 0., 0.])]
 
         self.current_time = self.get_time()
+
+    def random_pose(self):
+        state = self.state.ravel()
+        state_vector = np.array([state[0],state[1],0,0,0,state[2]])
+
+        random_vector = np.random.rand(1,6)[0].ravel()*8-4 # Randomize between -4 and 4
+        random_vector[2:5] = [0,0,0]
+
+        return random_vector + state
 
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
@@ -189,13 +204,12 @@ class Controller(Node):
 
             # Main training
             self.target = [0.,0.,0.,0.,0.,0.] # Default initial target
-
             self.trainer.updateTarget(self.target) # To be used for trajectory tracking
 
-            self.get_logger().info(f"\n Starting training session")
+            self.get_logger().info(f"\n Starting session")
+            self.get_logger().info(f"\n Training is currently set to: {train}")
 
-            self.training_thread = threading.Thread(target=self.trainer.train, args=(self.target,)) # Start training process on a separate thread
-            self.trainer.running = True
+            self.training_thread = threading.Thread(target=self.trainer.run, args=(self.target,)) # Start training process on a separate thread
             self.training_thread.start()
             self.trainer.training = train
 
@@ -212,28 +226,34 @@ class Controller(Node):
         # 
         ####################################
 
-        if self.trainer.loss and self.automate: # Make sure the loss has been initialized
+        if self.trainer.loss and self.automate_valid: # Make sure the loss has been initialized
 
             # Detect when loss is below threshold (edge detection)
             if self.trainer.loss < self.loss_threshold :
                 if self.previous_loss >= self.loss_threshold :
                     self.minimal_loss_timer = self.current_time
             else:
-                self.minimal_loss_timer = None # Prevents false positives of robot briefly gets below threshold
+                self.minimal_loss_timer = None # Prevents false positives if robot briefly gets below threshold
 
             # Change robot's pose after loss remains under threshold for a set time
             if self.minimal_loss_timer and (self.current_time - self.minimal_loss_timer) > self.acceptable_loss_delay:
-                    cf.set_pose_gz(self.initial_poses[self.pose_index])
                     self.pose_index += 1
-                    self.pose_index %= len(self.initial_poses) # Makes sure the index wraps around instead of getting outside of the list
+                    if self.automate == 'random':
+                        new_pose = self.random_pose()
+                    elif self.automate == 'poses':
+                        new_pose = self.initial_poses[self.pose_index % len(self.initial_poses)]
+                        # self.pose_index %= len(self.initial_poses) # Makes sure the index wraps around instead of getting outside of the list 
+
+                    cf.set_pose_gz(new_pose)
+                    
                     self.minimal_loss_timer = None
-                    self.get_logger().info(f"\n Loss requirements met. Current pose index: {self.pose_index}")
+                    self.get_logger().info(f"\n Loss requirements met. Moving robot at {self.automate} ({self.pose_index}).")
 
             self.previous_loss = self.trainer.loss
 
         #################################### 
         # 
-        # Update robot control and publish it to main control node 
+        # Update robot control and publish it along with monitoring data to main control node 
         # 
         ####################################
 
@@ -258,14 +278,7 @@ class Controller(Node):
 
         # Debug info
         # self.get_logger().info(f"Grad: {self.trainer.gradient_display}")
-        # self.get_logger().info(f"Robot frame: {self.trainer.robot_frame}")
-        # self.get_logger().info(f"Target frame: {self.trainer.target_frame}")
-        # self.get_logger().info(f"Skew angle: {self.trainer.skew}")
-        self.get_logger().info(f"input_list: {self.trainer.input_list}")
-        # if self.trainer.error_display is not None:
-        #     self.get_logger().info(f"State: \n{self.trainer.state_display}")
-        #     self.get_logger().info(f"Target: \n{self.trainer.target_display}")        
-        #     self.get_logger().info(f"Error: \n{self.trainer.error_display}")    
+        # self.get_logger().info(f"Coordinates in target frame: {self.trainer.target_frame}")
 
         #################################### 
         # 
@@ -282,7 +295,7 @@ class Controller(Node):
             # Save the network
             json_obj = self.network.save_network_to_json()
             robot = 'uvr' if self.nb_thrusters == 3 else 'ur'
-            with open(f'saved_networks/{robot}_{network_name}_{self.order}-order.json', 'w') as fp:
+            with open(f'saved_networks/{robot}_{self.order}-order_{network_name}.json', 'w') as fp:
  
                 json.dump(json_obj, fp)
 
