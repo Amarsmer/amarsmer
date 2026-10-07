@@ -27,6 +27,9 @@ class Controller(Node):
         super().__init__('control_manager', namespace='amarsmer')
 
         # Parameters
+        self.declare_parameter('debugging', False) 
+        self.debugging = self.get_parameter('debugging').get_parameter_value().bool_value
+
         self.declare_parameter('controller_type', 'MPC') 
         self.controller_type = self.get_parameter('controller_type').get_parameter_value().string_value
 
@@ -80,6 +83,18 @@ class Controller(Node):
 
         self.u = None
 
+        # Initialize filter
+        # self.pqr_filter = cf.ButterworthFilter(cutoff=0.2,
+        #                                        fs=20.0,
+        #                                        order=2
+        #                                        )
+
+        self.pqr_filter = cf.PQRFilter(fs=1.0 / self.dt,
+                                    cutoff=3.0,
+                                    order=2,
+                                    spike_threshold=2.0,
+                                    )
+
         # Initialize controller 
         self.controller_path = Path()
 
@@ -115,12 +130,67 @@ class Controller(Node):
         robot = 'ur' if self.nb_thrusters == 2 else 'uvr'
         self.title = f'data/{ctrl}_data/{date}-{ctrl}_{robot}_{sim}{network}{comment}_data'
 
+        # Debugging data
+        if self.debugging:
+            self.debug_monitoring = []
+            column_names2 = ['t','x','y','z','phi','theta','psi','u','v','w','p','q','r']
+            column_names2.extend([f'u{i+1}' for i in range(self.nb_thrusters)])
+
+            if self.controller_type == 'AI':
+                column_names2.extend(ext_col)
+            self.debug_monitoring.append(column_names2)
+
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
         return s + ns*1e-9
 
+    # def odom_callback(self, msg: Odometry):
+    #     pose, twist = cf.odometry(msg)
+
+    #     self.current_pose = pose
+    #     self.current_twist = twist
+
+    # def odom_callback(self, msg: Odometry):
+    #     pose, twist = cf.odometry(msg)
+
+    #     pqr = [
+    #         twist[3],
+    #         twist[4],
+    #         twist[5]
+    #     ]
+
+    #     pqr_filtered = self.pqr_filter.update(pqr)
+
+    #     twist[3] = pqr_filtered[0]
+    #     twist[4] = pqr_filtered[1]
+    #     twist[5] = pqr_filtered[2]
+
+    #     self.current_pose = pose
+    #     self.current_twist = twist
+
+    # def odom_callback(self, msg: Odometry):
+    #     pose, twist = cf.odometry(msg)
+
+    #     pqr = [
+    #         twist[3],
+    #         twist[4],
+    #         twist[5]
+    #     ]
+
+    #     pqr_filtered = self.pqr_filter.update(pqr)
+
+    #     twist[3] = pqr_filtered[0]
+    #     twist[4] = pqr_filtered[1]
+    #     twist[5] = pqr_filtered[2]
+
+    #     self.current_pose = pose
+    #     self.current_twist = twist
+
     def odom_callback(self, msg: Odometry):
         pose, twist = cf.odometry(msg)
+
+        # Filter angular velocity [p, q, r]
+        twist[3:6] = self.pqr_filter.update(twist[3:6])
 
         self.current_pose = pose
         self.current_twist = twist
@@ -212,7 +282,6 @@ class Controller(Node):
 
             data_array = [current_time, x_m, y_m, psi_m, x_d_m, y_d_m, psi_d_m, *self.u]
 
-            # # TODO
             if self.controller_type == 'AI':
                 # Data shape is ['grad1', 'grad2', 'loss_x', 'loss_u']
                 data_array.extend(self.AI_data)
@@ -223,9 +292,23 @@ class Controller(Node):
             publisher_msg.data = data_array
             self.data_publisher.publish(publisher_msg)
 
+            if self.debugging: # Full data for debugging purposes
+                debug_data = [current_time, *self.current_pose, *self.current_twist, *self.u]
+
+                if self.controller_type == 'AI':
+                        # Data shape is ['grad1', 'grad2', 'loss_x', 'loss_u']
+                        debug_data.extend(self.AI_data)
+
+                self.debug_monitoring.append(debug_data)
+
             if (current_time - self.t_record) > self.dt: # Update the saved file at set interval as doing so every step may corrupt the file if the callback is too frequent
                 self.t_record = current_time
                 np.save(self.title, self.monitoring)
+
+                if self.debugging:
+                    np.save(self.title + '_debug', self.debug_monitoring) 
+
+        
         
 
 rclpy.init()

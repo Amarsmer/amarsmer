@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import time
-import math
 import torch
 import numpy as np
 import sympy as sp
@@ -101,7 +100,6 @@ class PyTorchOnlineTrainer:
         self.input_display = None 
         self.error_display = None 
         self.delta_t_display = None
-        self.skew = None
         self.state_display = None
         self.loss_display = np.zeros(2)
 
@@ -115,30 +113,20 @@ class PyTorchOnlineTrainer:
 
     def computeError(self):
 
-        def theta_s(x, y): # Angle skew, used to prevent the singularity in x=0
-            return math.tanh(5.*x)*math.atan(3.*y)
+        def theta_s(x, y, gamma = 0.3, alpha = 20., beta = 10.): # Angle skew, used to prevent the singularity in x=0
+            # return np.exp(-gamma*x**2)*np.tanh(alpha*x)*np.arctan(beta*y)
+            return np.exp(-gamma*x**2)*np.tanh(alpha*x)*np.arctan(beta*np.sign(y)*abs(y**2)) 
 
         # Compute error as a column vector
         self.state_display = self.state.copy()
         self.target_display = self.target.copy()
 
-        state = self.state.ravel()
-        target = self.target.ravel()
+        state = self.state.copy().ravel()
+        target = self.target.copy().ravel()
 
-        self.robot_frame = frameTransform(self.state, self.target, 'robot')
-
-        # Compute angle skew
+        # Project the state and target in the target's frame
         dx_t, dy_t, dpsi_t = frameTransform(self.state, self.target, 'target')
         self.target_frame = [dx_t, dy_t, dpsi_t]
-
-        psi = np.arctan2(target[3],target[2])
-        skew = theta_s(dx_t,dy_t)
-
-        if self.nb_thr == 2 :
-            skew_target = skew
-
-        elif self.nb_thr == 3 :
-            skew_target = psi
 
         state = np.array([dx_t,
                           dy_t,
@@ -149,17 +137,28 @@ class PyTorchOnlineTrainer:
                           state[5]]).reshape(-1, 1)
 
         target = np.zeros((7,1))
-        target[2] = np.cos(skew_target)
-        target[3] = np.sin(skew_target)
-
+        target[2] = 1
+        
         error = state - target 
+
+        # Skew the target angle for gradient computation
+        psi = target[2]
+        skew = theta_s(dx_t,dy_t)
+
+        if self.nb_thr == 2 :
+            angle_target = skew
+
+        elif self.nb_thr == 3 :
+            angle_target = psi
+
+        target[2] = np.cos(angle_target)
+        target[3] = np.sin(angle_target)
 
         return error, state, target
 
     def computeNetworkInput(self, error):
         # Weight matrix used for input normalization
-        # weight_matrix = np.diag([1/10, 1/10, 1/(2*np.pi), 1, 1, 1/(2*np.pi)])
-        weight_matrix = np.diag([1/5, 1/5, 1, 1, 1, 1, 1/(2*np.pi)])
+        weight_matrix = np.diag([1/10, 1/10, 1, 1, 1, 1, 1/(2*np.pi)])
         network_input = weight_matrix @ error
 
         return network_input.ravel()

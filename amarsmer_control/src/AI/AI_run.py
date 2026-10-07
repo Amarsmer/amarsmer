@@ -84,10 +84,10 @@ class Controller(Node):
         self.ai_path = Path()
 
         # Weighting matrices
-        self.Q_weight = np.diag([5, # x
-                                 5, # y 
-                                 60, # cos psi
-                                 60, # sin psi
+        self.Q_weight = np.diag([10, # x
+                                 20, # y 
+                                 150, # cos psi
+                                 150, # sin psi
                                  1, # u
                                  1, # v
                                  1  # r
@@ -100,10 +100,10 @@ class Controller(Node):
         ### Create pytorch network
 
         # Network parameters
-        self.HL_size = 40
+        self.HL_size = 80
         input_size = 7*self.order # x, y, cos psi, sin psi, u, v, r
         output_size = self.nb_thrusters # u1, u2, ...
-        self.learning_rate = 1e-3
+        self.learning_rate = 1e-4
 
         self.trainer = None
         self.training_initiated = False
@@ -140,27 +140,34 @@ class Controller(Node):
         ####################################
         # If the loss is below the threshold for the entire set delay, the robot is moved to the next pose
         self.automate = self.get_parameter('automate').get_parameter_value().string_value
+        self.automate_valid = False
         if self.automate in ['random', 'poses']:
             self.automate_valid = True
-            self.loss_threshold = 15.
+            self.loss_threshold = 2
             self.previous_loss = 1e10 # Initialized at an arbitrarily high value instead of None to reduce the number of if statements
             self.minimal_loss_timer = None
-            self.acceptable_loss_delay = 20. # If the loss is below the threshold for this amount of time (s), the robot is moved
+            self.acceptable_loss_delay = 10. # If the loss is below the threshold for this amount of time (s), the robot is moved
 
             # Poses to be parsed 
             self.pose_index = 0
             if self.automate == 'poses':
-                self.initial_poses = [np.array([4., 4., 0., 0., 0., 1.]),
-                                    np.array([-4., -4., 0., 0., 0., 4.]),
+                self.initial_poses = [np.array([3., 3., 0., 0., 0., 1.]),
+                                    np.array([-3., -3., 0., 0., 0., 4.]),
                                     np.array([4., -4., 0., 0., 0., 1.]),
                                     np.array([-4., 4., 0., 0., 0., np.pi/2]),
                                     np.array([0., -4., 0., 0., 0., np.pi/2.]),
-                                    np.array([-4., 4., 0., 0., 0., -np.pi/2]),
-                                    np.array([0., -4., 0., 0., 0., -np.pi/2.]),
-                                    np.array([4., 0., 0., 0., 0., 0.]),
-                                    np.array([-4., 0., 0., 0., 0., 0.])]
+                                    np.array([-5., 5., 0., 0., 0., -np.pi/2]),
+                                    np.array([0., -5., 0., 0., 0., -np.pi/2.]),
+                                    np.array([5., 0., 0., 0., 0., 0.]),
+                                    np.array([-5., 0., 0., 0., 0., 0.])]
 
         self.current_time = self.get_time()
+
+        #################################### 
+        # 
+        # Functions
+        # 
+        ####################################
 
     def random_pose(self):
         state = self.state.ravel()
@@ -278,7 +285,7 @@ class Controller(Node):
 
         # Debug info
         # self.get_logger().info(f"Grad: {self.trainer.gradient_display}")
-        # self.get_logger().info(f"Coordinates in target frame: {self.trainer.target_frame}")
+        # self.get_logger().info(f"Coordinates in target frame: \n{self.trainer.target_frame}")
 
         #################################### 
         # 
@@ -295,11 +302,12 @@ class Controller(Node):
             # Save the network
             json_obj = self.network.save_network_to_json()
             robot = 'uvr' if self.nb_thrusters == 3 else 'ur'
-            with open(f'saved_networks/{robot}_{self.order}-order_{network_name}.json', 'w') as fp:
+            saved_name = f'{robot}_{self.order}-order_{network_name}'
+            with open(f'saved_networks/{saved_name}.json', 'w') as fp:
  
                 json.dump(json_obj, fp)
 
-            self.get_logger().info("Training stopped")
+            self.get_logger().info(f"Training stopped, network saved as: {saved_name}")
 
 rclpy.init()
 node = Controller()

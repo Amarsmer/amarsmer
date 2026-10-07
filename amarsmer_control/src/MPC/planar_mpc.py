@@ -398,6 +398,11 @@ class MPCController:
             cpsi = math.cos(psi)
             spsi = math.sin(psi)
 
+            norm = np.hypot(cpsi,spsi)
+            if abs(norm-1)>1e-12:
+                cpsi /= norm
+                spsi /= norm
+
             if i > 0:
                 prev_pose = poses[i - 1].pose
                 dx = x - prev_pose.position.x

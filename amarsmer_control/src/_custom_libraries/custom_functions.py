@@ -7,13 +7,19 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 from visualization_msgs.msg import Marker
 from scipy.spatial.transform import Rotation as R
+from scipy.signal import butter, sosfilt
+from collections import deque
 import numpy as np
 import sympy as sp
 import os
 from ament_index_python.packages import get_package_share_directory
 import yaml
 
-#################### Yaml reading ####################
+########################################
+# 
+# Yaml reading 
+# 
+########################################
 
 def read_model():
     # Locate YAML file
@@ -60,7 +66,11 @@ def read_model():
 
     return mass, inertia, added_mass, linear_damping, quadratic_damping
 
-#################### Gradient computation ####################
+########################################
+# 
+# Gradient computation
+# 
+########################################
 
 def build_grad(B, mass, added_mass, inertia, dampening, radius, half_length, Qw, Rw):
 
@@ -258,7 +268,92 @@ def build_grad(B, mass, added_mass, inertia, dampening, radius, half_length, Qw,
 
     return f, symb_full, symb_Ud, symb_Udd
 
-#################### Gazebo interaction ####################
+########################################
+# 
+# Filter
+# 
+########################################
+
+class PQRFilter:
+    def __init__(
+        self,
+        fs,
+        cutoff=3.0,
+        order=2,
+        spike_threshold=2.0,
+    ):
+        self.fs = fs
+        self.spike_threshold = spike_threshold
+
+        # Butterworth low-pass filter
+        self.sos = butter(
+            order,
+            cutoff,
+            fs=fs,
+            btype='low',
+            output='sos'
+        )
+
+        # Filter state for p, q, r
+        self.zi = np.zeros((self.sos.shape[0], 2, 3))
+
+        # Previous samples for spike detection
+        self.history = deque(maxlen=2)
+
+    def update(self, pqr):
+        """
+        Input:
+            pqr = [p, q, r]
+
+        Output:
+            filtered [p, q, r]
+        """
+        x = np.asarray(pqr, dtype=float)
+
+        # First samples: nothing to compare against yet
+        if len(self.history) < 2:
+            self.history.append(x.copy())
+            y, self.zi = sosfilt(
+                self.sos,
+                x.reshape(1, 3),
+                axis=0,
+                zi=self.zi
+            )
+            return y[0]
+
+        x1 = self.history[-1]
+        x2 = self.history[-2]
+
+        # Linear prediction from the previous two samples
+        prediction = x1 + (x1 - x2)
+
+        # Detect isolated spikes
+        deviation = np.abs(x - prediction)
+        spike = deviation > self.spike_threshold
+
+        # Replace only the channels containing a spike
+        x_filtered = x.copy()
+        x_filtered[spike] = prediction[spike]
+
+        # Update history with the corrected sample
+        self.history.append(x_filtered.copy())
+
+        # Butterworth filtering
+        y, self.zi = sosfilt(
+            self.sos,
+            x_filtered.reshape(1, 3),
+            axis=0,
+            zi=self.zi
+        )
+
+        return y[0]
+
+########################################
+# 
+# Gazebo interaction
+# 
+########################################
+
 def pause_gz(pause):
     os.system(f'gz service -s /world/ocean/control --reqtype gz.msgs.WorldControl --reptype gz.msgs.Boolean --req \'pause: {pause}\' --timeout 1000')
 
@@ -273,7 +368,12 @@ def set_pose_gz(pose):
 def set_current_gz(x, y, z):
     os.system(f'gz topic -t "/ocean_current" -m gz.msgs.Vector3d -p "x: {x}, y: {y}, z: {z}"')
 
-#################### ROS2 interaction ####################
+########################################
+# 
+# ROS2 interaction
+# 
+########################################
+
 def odometry(msg, quat = False):
     # Extract pose
     msg_pose = msg.pose.pose
@@ -460,7 +560,12 @@ def compute_target(path, dt, sc = False):
             return [x, y, psi, u, v, r]
 
 
-#################### Trajectory generation ####################
+########################################
+# 
+# Trajectory generation
+# 
+########################################
+
 def seabed_scanning(t):
     """
     Calculate non-differentiated reference positions at a single time t.

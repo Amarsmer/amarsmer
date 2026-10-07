@@ -9,6 +9,7 @@ sl_spawn = sl.declare_arg('spawn_pose', default_value='0.0 0.0 0.0 0.0 0.0 0.0')
 # Control parameters
 sl_trajectory = sl.declare_arg('trajectory', default_value = 'station_keeping')  # Compute selected trajectory
 sl_controller = sl.declare_arg('controller_type', default_value = 'MPC')         # Uses selected controller
+sl_debugging = sl.declare_arg('debugging', default_value = False)    
 sl_comment = sl.declare_arg('comment', default_value='')                         # Add specified comment to the recorded data filename
 sl_dt = sl.declare_arg('dt', default_value = 0.05)                               # Make sure different systems use the same time period
 
@@ -84,7 +85,9 @@ def launch_setup():
 
         sl.node('amarsmer_control',
                 'control_manager.py',
-                parameters={'controller_type' : sl_controller,
+                parameters={'debugging' : sl_debugging,
+                            'controller_type' : sl_controller,
+                            'network_name' : sl_network_name,
                             'comment' : sl_comment,
                             'nb_thrusters' : thr_nb,
                             'simulation' : True,
