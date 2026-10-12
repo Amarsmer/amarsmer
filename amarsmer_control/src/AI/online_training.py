@@ -58,6 +58,7 @@ class PyTorchOnlineTrainer:
         # Variables init
         self.state = None
         self.target = None
+        self.next_target = None
         self.error = None
         self.u = np.zeros(2)
         self.loss = None
@@ -105,24 +106,25 @@ class PyTorchOnlineTrainer:
 
         self.target_display = None
 
-    def updateTarget(self, in_target):
+    def updateTarget(self, in_target, in_next_target = [0.]*6):
         self.target = np.array(in_target).reshape(-1, 1)
+        self.next_target = np.array(in_next_target).reshape(-1, 1)
 
     def updateState(self, in_state):
         self.state = in_state
 
-    def computeError(self):
+    def reframe(self):
 
-        def theta_s(x, y, gamma = 0.3, alpha = 20., beta = 10.): # Angle skew, used to prevent the singularity in x=0
-            # return np.exp(-gamma*x**2)*np.tanh(alpha*x)*np.arctan(beta*y)
-            return np.exp(-gamma*x**2)*np.tanh(alpha*x)*np.arctan(beta*np.sign(y)*abs(y**2)) 
+        def theta_s(x, y): # Angle skew, used to prevent the singularity in x=0
+            if x == 0: # avoid dividing by zero
+                x = 1e-10
+            return np.tanh(10.*abs(x))*np.arctan(4.*y/x)
 
         # Compute error as a column vector
         self.state_display = self.state.copy()
         self.target_display = self.target.copy()
 
         state = self.state.copy().ravel()
-        target = self.target.copy().ravel()
 
         # Project the state and target in the target's frame
         dx_t, dy_t, dpsi_t = frameTransform(self.state, self.target, 'target')
@@ -136,25 +138,16 @@ class PyTorchOnlineTrainer:
                           state[4],
                           state[5]]).reshape(-1, 1)
 
-        target = np.zeros((7,1))
-        target[2] = 1
-        
-        error = state - target 
-
-        # Skew the target angle for gradient computation
-        psi = target[2]
+        # Skew the target angle
         skew = theta_s(dx_t,dy_t)
 
         if self.nb_thr == 2 :
             angle_target = skew
 
         elif self.nb_thr == 3 :
-            angle_target = psi
+            angle_target = 0
 
-        target[2] = np.cos(angle_target)
-        target[3] = np.sin(angle_target)
-
-        return error, state, target
+        return state, angle_target
 
     def computeNetworkInput(self, error):
         # Weight matrix used for input normalization
@@ -172,8 +165,13 @@ class PyTorchOnlineTrainer:
             # Get initial time for gradient computation later
             start_time = time.time()
 
-            error, state_cost, target_cost = self.computeError()
+            state_cost, skew_angle = self.reframe()
+            target_cost = np.zeros((7,1))
+            target_cost[2] = np.cos(skew_angle)
+            target_cost[3] = np.sin(skew_angle)  
+            error = state_cost - target_cost
             self.error_display = error.copy()
+            
             network_input = self.computeNetworkInput(error)
 
             self.input_list = self.input_list[7:] + network_input.tolist()

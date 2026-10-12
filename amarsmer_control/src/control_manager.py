@@ -103,9 +103,9 @@ class Controller(Node):
             self.path_time = 2.5 # self.mpc_time 
             self.path_steps = 15 # self.mpc_horizon
 
-        else:
-            self.path_time = self.dt
-            self.path_steps = 2
+        elif self.controller_type == 'AI': # send current target and next step target for gradient computation
+            self.path_time = 2*self.dt
+            self.path_steps = 3
 
         # Initialize monitoring values
         self.monitoring = []
@@ -143,48 +143,6 @@ class Controller(Node):
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
         return s + ns*1e-9
-
-    # def odom_callback(self, msg: Odometry):
-    #     pose, twist = cf.odometry(msg)
-
-    #     self.current_pose = pose
-    #     self.current_twist = twist
-
-    # def odom_callback(self, msg: Odometry):
-    #     pose, twist = cf.odometry(msg)
-
-    #     pqr = [
-    #         twist[3],
-    #         twist[4],
-    #         twist[5]
-    #     ]
-
-    #     pqr_filtered = self.pqr_filter.update(pqr)
-
-    #     twist[3] = pqr_filtered[0]
-    #     twist[4] = pqr_filtered[1]
-    #     twist[5] = pqr_filtered[2]
-
-    #     self.current_pose = pose
-    #     self.current_twist = twist
-
-    # def odom_callback(self, msg: Odometry):
-    #     pose, twist = cf.odometry(msg)
-
-    #     pqr = [
-    #         twist[3],
-    #         twist[4],
-    #         twist[5]
-    #     ]
-
-    #     pqr_filtered = self.pqr_filter.update(pqr)
-
-    #     twist[3] = pqr_filtered[0]
-    #     twist[4] = pqr_filtered[1]
-    #     twist[5] = pqr_filtered[2]
-
-    #     self.current_pose = pose
-    #     self.current_twist = twist
 
     def odom_callback(self, msg: Odometry):
         pose, twist = cf.odometry(msg)

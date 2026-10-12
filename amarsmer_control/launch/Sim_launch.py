@@ -3,21 +3,21 @@ from simple_launch import SimpleLauncher
 sl = SimpleLauncher(use_sim_time = True)
 
 # Simulation parameters
-sl.declare_arg('thrusters', default_value='ur')
-sl_spawn = sl.declare_arg('spawn_pose', default_value='0.0 0.0 0.0 0.0 0.0 0.0')
+sl.declare_arg('thrusters', default_value='ur')                                  # Robot architecture
+sl_spawn = sl.declare_arg('spawn_pose', default_value='0.0 0.0 0.0 0.0 0.0 0.0') # Initial robot coordinates in 3D(x, y, z, phi, theta, psi)
 
 # Control parameters
 sl_trajectory = sl.declare_arg('trajectory', default_value = 'station_keeping')  # Compute selected trajectory
 sl_controller = sl.declare_arg('controller_type', default_value = 'MPC')         # Uses selected controller
-sl_debugging = sl.declare_arg('debugging', default_value = False)    
+sl_debugging = sl.declare_arg('debugging', default_value = False)                # If true, will create a separate data file with additionnal info used in debugging
 sl_comment = sl.declare_arg('comment', default_value='')                         # Add specified comment to the recorded data filename
 sl_dt = sl.declare_arg('dt', default_value = 0.05)                               # Make sure different systems use the same time period
 
 # AI specific parameters
 sl_network_name = sl.declare_arg('network_name', default_value = '')             # Load saved network (name only, no ".json")
 sl_train = sl.declare_arg('train', default_value = True)                         # Whether to train or test the network
-sl_automate = sl.declare_arg('automate', default_value = '')                  # Will teleport the robot if the criteria is small enough for a set duration, mostly used with the station_keeping task
-sl_order = sl.declare_arg('order', default_value = 1)   
+sl_automate = sl.declare_arg('automate', default_value = '')                     # Will move the robot if the criteria is small enough for a set duration, mostly used with the station_keeping task
+sl_order = sl.declare_arg('order', default_value = 1)                            # Number of previous iterations of the state that are set as input to the network (1 = current state, 2 = current state and previous state, ...)
 
 architecture_param = {'ur': {
                                 'xacro': 'thrusters_plasmar_ur',

@@ -224,17 +224,20 @@ def build_grad(B, mass, added_mass, inertia, dampening, radius, half_length, Qw,
 
     ########## Gradient computation ##########
 
+    # Cost parameters
+    dt, alpha1, alpha2 = sp.symbols('dt alpha1 alpha2')
+
+    # Next state approximation
+    X_k1_cost = X_cost + X_cost_dot * dt + X_cost_ddot * 0.5* dt**2
+
     # First-order state/control gradient
     grad_U = sp.Matrix.hstack(*(sp.diff(X_cost_dot, control) for control in U))
 
     # Second-order state/control gradient
     gradd_U = sp.Matrix.hstack(*(sp.diff(X_cost_ddot, control) for control in U))
 
-    # Cost parameters
-    dt, alpha1, alpha2 = sp.symbols('dt alpha1 alpha2')
-
     # State cost gradient
-    gradxJ = 2 * (Qw * (X_cost - T_cost))
+    gradxJ = 2 * (Qw * (X_k1_cost - T_cost))
 
     # Control cost gradient
     graduJ = 2 * (Rw * U)
@@ -521,7 +524,7 @@ def create_pose_marker(inPose, inPub):
 
     inPub.publish(marker)
 
-def compute_target(path, dt, sc = False):
+def compute_target(path, dt, shift = 0, sc = False):
 
         def get_yaw_from_quaternion(q):
             siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
@@ -529,7 +532,7 @@ def compute_target(path, dt, sc = False):
             return np.arctan2(siny_cosp, cosy_cosp)
 
         # Extract current target and next step target
-        poses = path.poses[:2]
+        poses = path.poses[shift:shift+2]
         present = poses[0].pose
         future = poses[1].pose
 

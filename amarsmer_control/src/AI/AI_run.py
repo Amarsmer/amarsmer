@@ -84,16 +84,16 @@ class Controller(Node):
         self.ai_path = Path()
 
         # Weighting matrices
-        self.Q_weight = np.diag([10, # x
-                                 20, # y 
-                                 150, # cos psi
-                                 150, # sin psi
+        self.Q_weight = np.diag([2, # x
+                                 12, # y 
+                                 12, # cos psi
+                                 12, # sin psi
                                  1, # u
                                  1, # v
                                  1  # r
                                  ])
 
-        self.R_weight = np.diag([1e-6]*self.nb_thrusters)
+        self.R_weight = np.diag([2e-6]*self.nb_thrusters)
 
         # TODO The difference of R weight between AI and MPC may come from delta_t applied to the gradient, further investigation required
 
@@ -210,7 +210,7 @@ class Controller(Node):
             train = self.get_parameter('train').get_parameter_value().bool_value #Boolean
 
             # Main training
-            self.target = [0.,0.,0.,0.,0.,0.] # Default initial target
+            self.target = [0.]*6 # Default initial target
             self.trainer.updateTarget(self.target) # To be used for trajectory tracking
 
             self.get_logger().info(f"\n Starting session")
@@ -223,7 +223,9 @@ class Controller(Node):
         if self.ai_path.poses and self.state is not None: # Make sure the path is not empty
 
             self.target = cf.compute_target(self.ai_path, self.dt)
-            self.trainer.updateTarget(self.target)
+            self.next_target = cf.compute_target(self.ai_path, self.dt, shift=1)
+
+            self.trainer.updateTarget(self.target, self.next_target)
 
             self.trainer.updateState(self.state)
 
