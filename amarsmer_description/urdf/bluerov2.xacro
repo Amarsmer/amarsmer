@@ -1,5 +1,13 @@
 <?xml version="1.0"?>
 <robot name="bluerov2" xmlns:xacro="http://www.ros.org/wiki/xacro" >
+
+  <!-- Load YAML -->
+
+  <xacro:property name="cfg"
+                value="${xacro.load_yaml('$(find amarsmer_control)/config/robot.yaml')}"/>
+
+  <xacro:property name="hydro"
+                value="${cfg['hydrodynamics']}"/>
     
   <xacro:arg name="namespace" default="amarsmer"/>
   <!-- thruster joints are fixed if not for gazebo use -->
@@ -41,7 +49,14 @@
         Emil Már Einarsson, Andris Lipenitis, Master thesis, 2020 
         for now make Ignition crash?-->   
 <!--         <inertia ixx="0.21" ixy="0.00" ixz="0.00" iyy="0.245" iyz="0.00" izz="0.245"/> -->
-        <inertia ixx="5.2539" ixy="0.0144" ixz="0.3341" iyy="7.9420" iyz="0.026" izz="6.9123"/>
+        <!-- <inertia ixx="5.2539" ixy="0.0144" ixz="0.3341" iyy="7.9420" iyz="0.026" izz="6.9123"/> -->
+        <inertia 
+        ixx=${hydro['inertia']['ixx']}
+        ixy=${hydro['inertia']['ixy']}
+        ixz=${hydro['inertia']['ixz']}
+        iyy=${hydro['inertia']['iyy']}
+        iyz=${hydro['inertia']['iyz']}
+        izz=${hydro['inertia']['izz']}
         
             <!-- Perfect rectangle -->
 <!--        <inertia

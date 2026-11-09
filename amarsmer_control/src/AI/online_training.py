@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
 
-import time
 import torch
 import numpy as np
 import sympy as sp
 import custom_functions as cf
 
+
 def wrap_angle(angle):
     return (angle + np.pi) % (2 * np.pi) - np.pi
 
-def frameTransform(robot_coords, target_coords, frame = 'robot'):
+
+def frameTransform(robot_coords, target_coords, frame='robot'):
     robot_coords = np.asarray(robot_coords).ravel()
     target_coords = np.asarray(target_coords).ravel()
 
-    x_r,y_r,psi_r,_,_,_ = robot_coords
-    x_t,y_t,psi_t,_,_,_ = target_coords
+    x_r, y_r, psi_r, _, _, _ = robot_coords
+    x_t, y_t, psi_t, _, _, _ = target_coords
 
-    cpsi_r = np.cos(psi_r)
-    spsi_r = np.sin(psi_r)
-
-    cpsi_t = np.cos(psi_t)
-    spsi_t = np.sin(psi_t)
+    cpsi_r, spsi_r = np.cos(psi_r), np.sin(psi_r)
+    cpsi_t, spsi_t = np.cos(psi_t), np.sin(psi_t)
 
     if frame == 'robot':
         x = (x_t - x_r)*cpsi_r + (y_t - y_r)*spsi_r
@@ -32,45 +30,48 @@ def frameTransform(robot_coords, target_coords, frame = 'robot'):
         y = (y_r - y_t)*cpsi_t - (x_r - x_t)*spsi_t
         psi = psi_r - psi_t
 
-    return x,y,psi
+    return x, y, psi
+
 
 class PyTorchOnlineTrainer:
-    def __init__(self, nn_model, in_learning_rate = 5e-4, order = 1, in_Q=np.eye(6), in_R=np.eye(3), nb_thr = 2):
+    STATE_DIM = 7  # x, y, cos psi, sin psi, u, v, r
+
+    def __init__(self, nn_model, in_learning_rate=5e-4, order=1,
+                 in_Q=None, in_R=None, nb_thr=2, dt=0.05):
 
         self.network = nn_model
-        self.unwrap = False
-
         self.nb_thr = nb_thr
+        self.order = order
+        self.dt = dt  # physical time step used for the gradient
 
-        # Weighting matrices
-        self.Q = in_Q
-        self.R = in_R
+        self.Q = np.eye(self.STATE_DIM) if in_Q is None else in_Q
+        self.R = np.eye(nb_thr) if in_R is None else in_R
 
-        # Training state
         self.training = True
-
         self.learning_rate = in_learning_rate
+        self.input_coefficient = 40.0  # output scaling
 
-        # Set up optimizer (partially replaces backpropagation)
-        self.optimizer = torch.optim.Adam(self.network.parameters(), 
+        self.optimizer = torch.optim.Adam(self.network.parameters(),
                                           lr=self.learning_rate)
 
-        # Variables init
-        self.state = None
-        self.target = None
-        self.next_target = None
-        self.error = None
-        self.u = np.zeros(2)
+        # Input history (for order > 1), filled on the first step
+        self.input_list = [0.]*self.STATE_DIM*order
+        self._history_empty = True
+
+        # Outputs / monitoring
+        self.u = np.zeros((nb_thr, 1))
         self.loss = None
-        self.input_list = [0]*7*order
-
-        self.running = True
-
-        self.robot_frame = [0,0,0]
-        self.target_frame = [0,0,0]
+        self.loss_display = np.zeros(2)
+        self.gradient_display = np.zeros(nb_thr)
+        self.error_display = None
+        self.input_display = None
+        self.state_display = None
+        self.target_display = None
+        self.target_frame = [0, 0, 0]
+        self.trainer_set = False  # True once the first step has completed
+        self.skew_display = None
 
         ## Modeling
-        # B matrix, NED not yet implemented, so the last row is reversed
         R = sp.Symbol('R')
         hl = sp.Symbol('hl')
 
@@ -78,156 +79,114 @@ class PyTorchOnlineTrainer:
             B = sp.Matrix([[1, 1],
                            [0, 0],
                            [R,-R]])
-
         elif self.nb_thr == 3:
             B = sp.Matrix([[1, 1, 0],
                            [0, 0, 1],
                            [R,-R, hl]])
+        else:
+            raise ValueError(f"Unsupported number of thrusters: {self.nb_thr}")
 
-        # Read YAML file for robot's properties
         mass, inertia, added_masses, viscous_drag, _ = cf.read_model()
 
         radius = 0.15
         hl = 0.3
-        planar_added_mass = [added_masses[i] for i in [0,1,5]]
-        planar_dampening = [viscous_drag[i] for i in [0,1,5]]
+        planar_added_mass = [added_masses[i] for i in [0, 1, 5]]
+        planar_dampening = [viscous_drag[i] for i in [0, 1, 5]]
 
-        self.compute_gradient,_,_,_ = cf.build_grad(B, mass, planar_added_mass, inertia[-1], planar_dampening, radius, hl, in_Q, in_R)
+        self.compute_gradient, _, _, _ = cf.build_grad(B, mass, planar_added_mass, inertia[-1], planar_dampening,radius, hl, self.Q, self.R)
 
-        self.trainer_set = False # Make sure inputs have been computed before recording data
+    def reframe(self, state_in, target_in):
 
-        # Monitoring variables, meant to be displayed in terminal
-        self.gradient_display = None
-        self.input_display = None 
-        self.error_display = None 
-        self.delta_t_display = None
-        self.state_display = None
-        self.loss_display = np.zeros(2)
-
-        self.target_display = None
-
-    def updateTarget(self, in_target, in_next_target = [0.]*6):
-        self.target = np.array(in_target).reshape(-1, 1)
-        self.next_target = np.array(in_next_target).reshape(-1, 1)
-
-    def updateState(self, in_state):
-        self.state = in_state
-
-    def reframe(self):
-
-        def theta_s(x, y): # Angle skew, used to prevent the singularity in x=0
-            if x == 0: # avoid dividing by zero
+        def theta_s(x, y):  # Angle skew, prevents the singularity in x=0
+            if x == 0:
                 x = 1e-10
-            return np.tanh(10.*abs(x))*np.arctan(4.*y/x)
+            return np.tanh(20.*x**2)*np.arctan(1.5*y/x)
 
-        # Compute error as a column vector
-        self.state_display = self.state.copy()
-        self.target_display = self.target.copy()
+        self.state_display = state_in.copy()
+        self.target_display = target_in.copy()
 
-        state = self.state.copy().ravel()
+        s = state_in.ravel()
 
-        # Project the state and target in the target's frame
-        dx_t, dy_t, dpsi_t = frameTransform(self.state, self.target, 'target')
+        dx_t, dy_t, dpsi_t = frameTransform(state_in, target_in, 'target')
         self.target_frame = [dx_t, dy_t, dpsi_t]
 
         state = np.array([dx_t,
                           dy_t,
                           np.cos(dpsi_t),
                           np.sin(dpsi_t),
-                          state[3],
-                          state[4],
-                          state[5]]).reshape(-1, 1)
+                          s[3],
+                          s[4],
+                          s[5]]).reshape(-1, 1)
 
-        # Skew the target angle
-        skew = theta_s(dx_t,dy_t)
-
-        if self.nb_thr == 2 :
-            angle_target = skew
-
-        elif self.nb_thr == 3 :
-            angle_target = 0
+        angle_target = theta_s(dx_t, dy_t) if self.nb_thr == 2 else 0.
 
         return state, angle_target
 
-    def computeNetworkInput(self, error):
-        # Weight matrix used for input normalization
-        weight_matrix = np.diag([1/10, 1/10, 1, 1, 1, 1, 1/(2*np.pi)])
-        network_input = weight_matrix @ error
+    def compute_network_input(self, error):
+        weight_matrix = np.diag([1/6, 1/6, 1, 1, 1, 1, 1/(2*np.pi)])
+        return (weight_matrix @ error).ravel()
 
-        return network_input.ravel()
+    def step(self, state, target):
+        """One control + (optional) training step. Returns u as a 1D array."""
+        state = np.asarray(state).reshape(-1, 1)
+        target = np.asarray(target).reshape(-1, 1)
 
-    def run(self, target):
-        # Training loop
-        while self.running:
-            while self.state is None or self.target is None:
-                time.sleep(0.001)
+        # Error in the target frame
+        state_cost, skew_angle = self.reframe(state, target)
+        target_cost = np.zeros((self.STATE_DIM, 1))
+        target_cost[2] = np.cos(skew_angle)
+        target_cost[3] = np.sin(skew_angle)
+        error = state_cost - target_cost
 
-            # Get initial time for gradient computation later
-            start_time = time.time()
+        self.skew_display = skew_angle.copy()
 
-            state_cost, skew_angle = self.reframe()
-            target_cost = np.zeros((7,1))
-            target_cost[2] = np.cos(skew_angle)
-            target_cost[3] = np.sin(skew_angle)  
-            error = state_cost - target_cost
-            self.error_display = error.copy()
-            
-            network_input = self.computeNetworkInput(error)
+        network_input = self.compute_network_input(error)
 
-            self.input_list = self.input_list[7:] + network_input.tolist()
-            
-            # Prepare input
-            input_tensor = torch.tensor(self.input_list, dtype=torch.float32, requires_grad=self.training)
+        # Input history
+        if self._history_empty:
+            self.input_list = network_input.tolist()*self.order
+            self._history_empty = False
+        else:
+            self.input_list = self.input_list[self.STATE_DIM:] + network_input.tolist()
 
-            # Forward pass
-            if self.training:
+        input_tensor = torch.tensor(self.input_list, dtype=torch.float32)
+
+        # Forward pass
+        if self.training:
+            u_tensor = self.network(input_tensor)
+        else:
+            with torch.no_grad():
                 u_tensor = self.network(input_tensor)
-            else:
-                with torch.no_grad():
-                    u_tensor = self.network(input_tensor)
 
-            # Scale output
-            input_coefficient = 40.0
-            u_tensor = input_coefficient * u_tensor
+        # u_tensor = self.input_coefficient*u_tensor
+        self.u = self.input_coefficient*u_tensor.detach().cpu().numpy().reshape(-1, 1)
 
-            # Apply control input (convert ONLY for the robot)
-            self.u = u_tensor.detach().cpu().numpy().copy().reshape(-1, 1)
+        # Loss (monitoring, and automation in the node)
+        crit_x = (error.T @ self.Q @ error).item()
+        crit_u = (self.u.T @ self.R @ self.u).item()
+        self.loss = crit_x + crit_u
+        self.loss_display = np.array([crit_x, crit_u])
 
-            # Compute loss, both for monitoring and later for backpropagation
-            crit_x = error.transpose() @ self.Q @ error
-            crit_u = self.u.transpose() @ self.R @ self.u
-            self.loss = crit_x + crit_u
+        grad = np.atleast_1d(self.compute_gradient(state_cost, target_cost, self.u, self.dt, 1/self.dt, 1/self.dt**2).squeeze())
+        grad_tensor = torch.tensor(grad, dtype=torch.float32)
+        self.gradient_display = grad.copy()
 
-            self.loss_display = np.array([crit_x, crit_u])
+        # Training step
+        if self.training:
+            self.optimizer.zero_grad()
+            u_tensor.backward(gradient=grad_tensor)
+            self.optimizer.step()
 
-            ### Training step
-            if self.training:
-                delta_t = (time.time() - start_time)
-                self.delta_t_display = delta_t
+        # Monitoring
+        self.error_display = error.copy()
+        self.input_display = network_input.copy()
+        self.trainer_set = True
 
-                # Manual gradient computation
-                grad = self.compute_gradient(state_cost, target_cost, self.u, delta_t, 1, 1000).squeeze()
-                
-                # Convert to tensor grad
-                grad_tensor = torch.tensor(grad, dtype=torch.float32)
+        return self.u.ravel()
 
-                self.gradient_display = grad.copy()
-
-                # Backprop using external gradient
-                self.optimizer.zero_grad()
-                u_tensor.backward(gradient=grad_tensor)
-                self.optimizer.step()
-
-            else:
-                self.gradient_display = np.array([0,0])
-
-            self.previous_target = self.target
-            self.previous_state = self.state
-
-            # Monitoring data for debugging purposes
-            self.state_train_display = self.state.copy()
-            self.error_display = error.copy()
-            self.input_display = network_input.copy()
-
-            if not self.trainer_set: # Used for data recording purposes
-                self.trainer_set = True
+    def reset(self, reset_optimizer=False):
+        """Call after a discontinuity (e.g. robot teleported)."""
+        self._history_empty = True
+        if reset_optimizer:
+            self.optimizer = torch.optim.Adam(self.network.parameters(),
+                                              lr=self.learning_rate)

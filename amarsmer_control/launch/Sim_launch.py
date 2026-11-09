@@ -4,7 +4,8 @@ sl = SimpleLauncher(use_sim_time = True)
 
 # Simulation parameters
 sl.declare_arg('thrusters', default_value='ur')                                  # Robot architecture
-sl_spawn = sl.declare_arg('spawn_pose', default_value='0.0 0.0 0.0 0.0 0.0 0.0') # Initial robot coordinates in 3D(x, y, z, phi, theta, psi)
+sl_spawn = sl.declare_arg('spawn_pose', default_value='0.0 0.0 0.0 0.0 0.0 0.0') # Initial robot coordinates in 3D (x, y, z, phi, theta, psi)
+sl_current = sl.declare_arg('current', default_value='0.0 0.0 0.0')              # Initial current (x,y,z)
 
 # Control parameters
 sl_trajectory = sl.declare_arg('trajectory', default_value = 'station_keeping')  # Compute selected trajectory
@@ -34,6 +35,10 @@ architecture_param = {'ur': {
                       'blueROV2': {
                                 'xacro': 'thrusters_blueROV2',
                                 'thrusters': 6
+                        },
+                      'blueROV2Heavy': {
+                                'xacro': 'thrusters_blueROV2Heavy',
+                                'thrusters': 8
                         },
                 }
                         
@@ -81,7 +86,8 @@ def launch_setup():
                 'simulation_interface.py',
                 parameters={'nb_thrusters' : thr_nb,
                             'dt' : sl_dt,
-                            'spawn_pose': sl_spawn})
+                            'spawn_pose': sl_spawn,
+                            'current' : sl_current})
 
         sl.node('amarsmer_control',
                 'control_manager.py',

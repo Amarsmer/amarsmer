@@ -83,12 +83,6 @@ class Controller(Node):
 
         self.u = None
 
-        # Initialize filter
-        # self.pqr_filter = cf.ButterworthFilter(cutoff=0.2,
-        #                                        fs=20.0,
-        #                                        order=2
-        #                                        )
-
         self.pqr_filter = cf.PQRFilter(fs=1.0 / self.dt,
                                     cutoff=3.0,
                                     order=2,
@@ -104,8 +98,8 @@ class Controller(Node):
             self.path_steps = 15 # self.mpc_horizon
 
         elif self.controller_type == 'AI': # send current target and next step target for gradient computation
-            self.path_time = 2*self.dt
-            self.path_steps = 3
+            self.path_time = self.dt
+            self.path_steps = 2
 
         # Initialize monitoring values
         self.monitoring = []
@@ -113,16 +107,22 @@ class Controller(Node):
         column_names = ['t','x','y','psi','x_d','y_d','psi_d']
         column_names.extend([f'u{i+1}' for i in range(self.nb_thrusters)]) # Add thruster input columns
 
-        if self.controller_type == 'AI':
-            self.aiData_subscriber = self.create_subscription(Float32MultiArray, '/amarsmer/aiData', self.aiData_callback, 10)
+        if self.controller_type in ['AI','MPC']:
+            self.ctrlData_subscriber = self.create_subscription(Float32MultiArray, '/amarsmer/ctrlData', self.ctrlData_callback, 10)
 
-            ext_col = [*[f'grad{i+1}' for i in range(self.nb_thrusters)], 'loss_x', 'loss_u']
+            if self.controller_type == 'AI':
+                ext_col = [*[f'grad{i+1}' for i in range(self.nb_thrusters)], 'loss_x', 'loss_u']
+            
+            elif self.controller_type == 'MPC':
+                ext_col = ['loss_x', 'loss_u']
+
             column_names.extend(ext_col)
-            self.AI_data = [0]*len(ext_col)
+            self.ctrl_data = [0]*len(ext_col)
 
         self.monitoring.append(column_names)
 
         self.t_record = self.get_time()
+        self.t_copy_record = self.t_record
 
         ctrl = self.controller_type # Inefficient but more readable
         date = datetime.today().strftime('%Y_%m_%d-%H_%M_%S')
@@ -136,8 +136,9 @@ class Controller(Node):
             column_names2 = ['t','x','y','z','phi','theta','psi','u','v','w','p','q','r']
             column_names2.extend([f'u{i+1}' for i in range(self.nb_thrusters)])
 
-            if self.controller_type == 'AI':
+            if self.controller_type in ['AI', 'MPC']:
                 column_names2.extend(ext_col)
+            
             self.debug_monitoring.append(column_names2)
 
     def get_time(self):
@@ -158,8 +159,8 @@ class Controller(Node):
         if msg.data:
             self.get_logger().info(f'Controller ready')
 
-    def aiData_callback(self, msg):
-        self.AI_data = msg.data
+    def ctrlData_callback(self, msg):
+        self.ctrl_data = msg.data
 
     def thr_input_callback(self, msg):
         self.u = msg.data
@@ -240,9 +241,8 @@ class Controller(Node):
 
             data_array = [current_time, x_m, y_m, psi_m, x_d_m, y_d_m, psi_d_m, *self.u]
 
-            if self.controller_type == 'AI':
-                # Data shape is ['grad1', 'grad2', 'loss_x', 'loss_u']
-                data_array.extend(self.AI_data)
+            if self.controller_type in ['AI','MPC']:
+                data_array.extend(self.ctrl_data)
 
             self.monitoring.append(data_array)
 
@@ -253,9 +253,8 @@ class Controller(Node):
             if self.debugging: # Full data for debugging purposes
                 debug_data = [current_time, *self.current_pose, *self.current_twist, *self.u]
 
-                if self.controller_type == 'AI':
-                        # Data shape is ['grad1', 'grad2', 'loss_x', 'loss_u']
-                        debug_data.extend(self.AI_data)
+                if self.controller_type in ['AI','MPC']:
+                        debug_data.extend(self.ctrl_data)
 
                 self.debug_monitoring.append(debug_data)
 
@@ -265,6 +264,14 @@ class Controller(Node):
 
                 if self.debugging:
                     np.save(self.title + '_debug', self.debug_monitoring) 
+
+            if (current_time - self.t_copy_record) > 10: # Larger files take longer to record and may get corrupted if the process is interrupted when writing. Saving a copy at reduced frequency reduces that risk.abs
+                self.t_copy_record = current_time
+                np.save(self.title+'_backup', self.monitoring)
+
+                if self.debugging:
+                    np.save(self.title + '_debug_backup', self.debug_monitoring) 
+
 
         
         

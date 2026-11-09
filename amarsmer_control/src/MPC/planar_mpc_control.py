@@ -31,13 +31,14 @@ class Controller(Node):
         self.dt = self.get_parameter('dt').get_parameter_value().double_value
 
         self.InCtrl_subscriber = self.create_subscription(InCtrl, '/amarsmer/InCtrl', self.ctrl_callback, 10)
+        self.mpcData_publisher = self.create_publisher(Float32MultiArray, "/amarsmer/ctrlData", 10)
         self.thruster_input_publisher = self.create_publisher(Float32MultiArray, "/thruster_input", 10)
 
         self.timer = self.create_timer(self.dt, self.move)
 
         # MPC Parameters
         self.mpc_horizon = 20
-        self.mpc_time = 2.0
+        self.mpc_time = 2.5
         self.mpc_path = Path()
         linear_bound = 40.0
         self.input_bounds = {"lower": np.array([-linear_bound]*self.nb_thrusters),
@@ -45,23 +46,20 @@ class Controller(Node):
                              "idx":   np.arange(self.nb_thrusters)
                              }
                              
-        self.Q_weight = np.diag([50, # x
-                                 50, # y 
-                                 40, # cos psi
-                                 40, # sin psi
+        self.Q_weight = np.diag([70, # x
+                                 70, # y 
+                                 25, # cos psi
+                                 25, # sin psi
                                  1, # u
                                  1, # v
                                  1  # r
                                  ])
         
-        self.R_weight = np.diag([0.015]*self.nb_thrusters) # equal for every thruster
+        self.R_weight = np.diag([0.008]*self.nb_thrusters) # equal for every thruster
 
         # Initialize MPC solver
         self.controller = None #Updated at the start of spin
         self.state = None
-
-        self.loss = []
-        self.loss.append(['t','loss'])
 
     def get_time(self):
         s,ns = self.get_clock().now().seconds_nanoseconds()
@@ -104,18 +102,26 @@ class Controller(Node):
         if self.mpc_path.poses: # Make sure the path is not empty
             u = self.controller.solve(path=self.mpc_path, x_current=self.state)
 
-        # crit_x = self.state.transpose() @ self.Q_weight @ self.state
-        # crit_u = u.transpose() @ self.R_weight @ u
-        # loss = crit_x + crit_u
-        # self.loss.append([self.get_time(), loss])
-
-        # np.save('MPC_loss', self.loss)
-
-        # self.get_logger().info(f'\nState: {self.state}\n\nPath*: {self.mpc_path.poses[0]} \n\nU: {u}')
+        # Check for solver error
         status = self.controller.error_msg
         if status != "":
             self.get_logger().info(f'Status error: {status}\nDefaulting to previous output')
 
+        # Compute loss function
+        target_temp = cf.compute_target(self.mpc_path, self.dt, sc = True)
+        target = np.array(target_temp).reshape(-1,1)
+        error = self.state.reshape(-1,1) - target
+        
+        crit_x = error.transpose() @ self.Q_weight @ error
+        crit_u = u.transpose() @ self.R_weight @ u
+        loss = [crit_x, crit_u]
+
+        # Publish controller data
+        publisher_msg = Float32MultiArray()
+        publisher_msg.data = loss
+        self.mpcData_publisher.publish(publisher_msg)
+
+        # Publish thruster input
         publisher_msg = Float32MultiArray()
         publisher_msg.data = u
         self.thruster_input_publisher.publish(publisher_msg)

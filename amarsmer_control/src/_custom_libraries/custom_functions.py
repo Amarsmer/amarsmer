@@ -277,7 +277,7 @@ def build_grad(B, mass, added_mass, inertia, dampening, radius, half_length, Qw,
 # 
 ########################################
 
-class PQRFilter:
+class PQRFilter: # Gazebo sometime outputs abnormal values for rotational speeds that need to be filtered
     def __init__(
         self,
         fs,
@@ -368,7 +368,8 @@ def set_pose_gz(pose):
     os.system(f'gz service -s /world/ocean/set_pose --reqtype gz.msgs.Pose --reptype gz.msgs.Boolean --req \'name: "amarsmer" position: {{ x: {x}, y: {y}, z: {z} }} orientation: {{ x: {qx}, y: {qy}, z: {qz}, w: {qw} }}\' --timeout 1000')
     pause_gz(False)
 
-def set_current_gz(x, y, z):
+def set_current_gz(current_vector):
+    x,y,z = current_vector
     os.system(f'gz topic -t "/ocean_current" -m gz.msgs.Vector3d -p "x: {x}, y: {y}, z: {z}"')
 
 ########################################

@@ -76,7 +76,7 @@ Some parameters can be set at launch for ease of use.
 - dt: the time period at which every node is expected to run
 
 ### AI specific parameters
-- network name: the name of a saved neural network to be used
+- network name: the name of a saved neural network to be loaded
 - train: if True, will update the neural network while moving
 - automate: if True, will manually move the robot at different positions when the criteria is low enough for a given time window 
 

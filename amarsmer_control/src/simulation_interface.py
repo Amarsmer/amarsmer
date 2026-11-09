@@ -29,6 +29,10 @@ class Controller(Node):
         spwn = np.array([float(x)for x in self.get_parameter('spawn_pose').value.split()])
         cf.set_pose_gz(spwn)
 
+        self.declare_parameter('current', '0.0 0.0 0.0')
+        current = np.array([float(x)for x in self.get_parameter('current').value.split()])
+        cf.set_current_gz(current)
+
         self.rov = ROV(self, thrust_visual = True)
 
         self.thruster_input_sub = self.create_subscription(Float32MultiArray, "/thruster_input", self.thr_input_callback,10)
